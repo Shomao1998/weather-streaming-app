@@ -171,4 +171,3 @@ def weatherapifunction(myTimer: func.TimerRequest) -> None:
     # Calling the Main Program
     fetch_weather_data()
     
-    #test push to github
