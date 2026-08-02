@@ -1,5 +1,7 @@
 # Weather Streaming Pipeline
 
+*English · [简体中文](README.zh-CN.md)*
+
 A serverless ingestion-and-monitoring pipeline on Azure: telemetry is polled every 30 seconds,
 streamed through Event Hubs, landed in a data lake, curated into a queryable table, and surfaced on
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
