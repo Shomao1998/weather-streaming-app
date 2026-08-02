@@ -29,24 +29,23 @@ Separately on that project I tracked task progress across teams and maintained t
 reporting it. Taking cues from public portfolio projects, this one merges the two requirements into
 a streaming weather collection and monitoring dashboard.
 
-**How it was built.** I defined the requirements, constraints and acceptance criteria and made the
+**Build method.** I defined the requirements, constraints and acceptance criteria and made the
 scope and cost decisions; the implementation was produced by iterating with an AI coding agent.
 
-That history shapes how cost is handled here: Application Insights sampling is enabled, the default
-log level is `Warning` (at `Information` the Azure SDK logs every HTTP request it issues), every
-storage layer carries an explicit retention policy, and the single expensive component sits behind
-a configuration flag. A technically sound design can still fail on operating cost.
+**Cost control.** Application Insights sampling is enabled; the default log level is `Warning` (at
+`Information` the Azure SDK logs every HTTP request it issues); each storage layer carries a
+retention policy; the single high-cost component is toggled by a configuration flag. A technically
+sound design can still be unviable on operating cost.
 
-The substitution of weather for logs is deliberate rather than cosmetic. Weather readings share the
-properties that make log ingestion awkward:
+Weather data substitutes for logs because the two share three properties:
 
-- **They arrive faster than they change.** The upstream API refreshes every 10–15 minutes while the
-  poller runs every 30 seconds, so the stream is mostly duplicates — the same problem as a device
-  re-emitting an unchanged status line.
-- **Some records matter more than others.** A temperature crossing 38 °C is the analogue of a
-  `CRITICAL` log line: it has to trigger something, not just land in storage.
-- **Gaps are the real failure.** A pipeline that ingests nothing looks identical to a healthy one
-  from the outside unless something is explicitly watching for silence.
+- **Reported faster than they change.** The upstream API refreshes every 10–15 minutes against a
+  30-second poll, so the stream is mostly duplicates — equivalent to a device re-emitting an
+  unchanged status line.
+- **Records are not equally important.** A reading above 38 °C corresponds to a `CRITICAL` log
+  line: it must trigger a response, not merely land in storage.
+- **Absence is the real failure.** A pipeline that has stopped ingesting is externally
+  indistinguishable from a healthy one unless something monitors for the absence of data.
 
 ## Architecture
 
@@ -111,6 +110,11 @@ Power BI, Spark, Fabric and DuckDB can all prune partitions without extra config
 
 ## Design decisions
 
+**A buffer in front of storage, and an append-only raw layer.** Ingestion writes to Event Hubs
+rather than to storage directly, and bronze is only ever appended to. Both follow from the
+zero-loss requirement: a downstream failure fills a buffer instead of dropping records, and nothing
+already landed is ever rewritten.
+
 **Splitting ingestion by how fast the data actually changes.** The original polled three endpoints
 every 30 seconds. Forecasts and weather alerts change a few times a day; polling them at observation
 frequency wasted roughly 90% of the API quota for identical bytes. Current conditions stay on the
@@ -119,16 +123,20 @@ frequency wasted roughly 90% of the API quota for identical bytes. Current condi
 **Deterministic record ids instead of stateful de-duplication.** Each record's id is a hash of
 `(location, upstream observation timestamp)`. Polling faster than the source refreshes produces the
 same id, so the curation step collapses duplicates with a dictionary and no state store, no
-watermark table, and no exactly-once delivery requirement on the stream.
+watermark table, and no exactly-once delivery requirement on the stream. This is the zero-loss
+requirement resolved in favour of duplication: losing a record is unacceptable, repeating one is
+merely collapsed later.
 
 **Observation time and ingestion time are separate fields.** They diverge — by the poll interval
 normally, by much more during an outage and replay. Collapsing them into one column makes
-late-arriving data impossible to reason about after the fact.
+late-arriving data impossible to reason about after the fact — and replay after an outage is
+precisely what a zero-loss guarantee makes routine.
 
 **A consumer function instead of Event Hubs Capture.** Capture is the managed way to land a stream
 in storage, but it is billed per throughput unit per hour and writes Avro. A ~40-line Event Hub
 triggered function costs effectively nothing at this volume, writes JSONL that is readable without
-tooling, and is itself part of the portfolio.
+tooling, and is itself part of the portfolio. The cost argument is the same one that stopped the
+original proposal: per-unit managed billing is what scales badly.
 
 **The lake is never publicly readable.** Serving the dashboard directly from blob storage would mean
 enabling anonymous access at the account level, which exposes the raw bronze data too. The Function
