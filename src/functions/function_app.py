@@ -13,11 +13,29 @@ import logging
 
 import azure.functions as func
 
-from weather import pipeline
+from weather import pipeline, serving
 from weather.config import ConfigError, get_settings
 
 app = func.FunctionApp()
 logger = logging.getLogger("weather")
+
+
+def _json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps(payload, ensure_ascii=False, default=str),
+        status_code=status_code,
+        mimetype="application/json",
+        # The dashboard polls these; a short cache absorbs refresh loops
+        # without making the page feel stale.
+        headers={"Cache-Control": "public, max-age=30"},
+    )
+
+
+def _serve(blob_name: str) -> func.HttpResponse:
+    try:
+        return _json_response(serving.read_serving_document(blob_name))
+    except serving.ServingDataUnavailable as exc:
+        return _json_response({"status": "unavailable", "detail": str(exc)}, 503)
 
 
 @app.function_name(name="ingest_current")
@@ -88,6 +106,27 @@ def archive_to_bronze(events: list[func.EventHubEvent]) -> None:
 def curate(timer: func.TimerRequest) -> None:
     """bronze -> silver (Power BI) and serving (public dashboard), hourly."""
     pipeline.curate(hours=24)
+
+
+@app.function_name(name="api_latest")
+@app.route(route="api/latest", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_latest(req: func.HttpRequest) -> func.HttpResponse:
+    """Most recent reading per location."""
+    return _serve(pipeline.SERVING_LATEST_BLOB)
+
+
+@app.function_name(name="api_timeseries")
+@app.route(route="api/timeseries", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_timeseries(req: func.HttpRequest) -> func.HttpResponse:
+    """24 hours of de-duplicated observations per location."""
+    return _serve(pipeline.SERVING_TIMESERIES_BLOB)
+
+
+@app.function_name(name="api_breaches")
+@app.route(route="api/breaches", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_breaches(req: func.HttpRequest) -> func.HttpResponse:
+    """Recent threshold breaches, newest first."""
+    return _serve(pipeline.SERVING_BREACHES_BLOB)
 
 
 @app.function_name(name="health")

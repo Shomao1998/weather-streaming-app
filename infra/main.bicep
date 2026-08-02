@@ -293,6 +293,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
+      cors: {
+        // The dashboard is served from a different origin than the API. These
+        // endpoints are anonymous, read-only and expose public weather data,
+        // so a wildcard origin gives up nothing; credentials stay disabled.
+        allowedOrigins: ['*']
+        supportCredentials: false
+      }
       appSettings: [
         // Identity-based storage access: no account keys anywhere in config.
         {

@@ -1,0 +1,466 @@
+/* Weather streaming dashboard.
+   No frameworks, no external requests: the whole page is three files so it can
+   sit on the Static Web Apps free tier and load instantly. */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e2e5ea;
+  --text: #14181f;
+  --text-dim: #5c6672;
+  --accent: #2563eb;
+  --ok: #128a5b;
+  --warn: #b45309;
+  --crit: #c0392f;
+  --shadow: 0 1px 2px rgb(20 24 31 / 6%), 0 4px 16px rgb(20 24 31 / 5%);
+
+  /* Series colours: distinguishable in both themes and for common colour
+     vision deficiencies. */
+  --s1: #2563eb;
+  --s2: #d97706;
+  --s3: #0d9488;
+  --s4: #9333ea;
+  --s5: #be123c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --border: #2a313c;
+    --text: #e6edf3;
+    --text-dim: #97a3b1;
+    --accent: #60a5fa;
+    --ok: #3fb984;
+    --warn: #e0a458;
+    --crit: #f2705f;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
+
+    --s1: #60a5fa;
+    --s2: #fbbf24;
+    --s3: #2dd4bf;
+    --s4: #c084fc;
+    --s5: #fb7185;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+/* ---------- masthead ---------- */
+
+.masthead {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.masthead__inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem;
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.masthead h1 {
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+}
+
+.masthead__sub {
+  margin: 0.4rem 0 0;
+  max-width: 62ch;
+  color: var(--text-dim);
+  font-size: 0.9375rem;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex: none;
+}
+
+.status__dot[data-state="live"] {
+  background: var(--ok);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.status__dot[data-state="error"] {
+  background: var(--crit);
+}
+
+.status__dot[data-state="stale"] {
+  background: var(--warn);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status__dot[data-state="live"] {
+    animation: none;
+  }
+}
+
+/* ---------- layout ---------- */
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.section-head h2 {
+  font-size: 1.0625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.section-head__meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-size: 0.9375rem;
+  margin: 0;
+  padding: 1.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+
+/* ---------- location cards ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.125rem 1.25rem 1rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card__place {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.card__country {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  margin-top: 0.15rem;
+}
+
+.card__temp {
+  font-size: 2rem;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.card__condition {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  margin-top: -0.375rem;
+}
+
+.metrics {
+  display: grid;
+  /* Falls to one column when the card is narrow, rather than wrapping values
+     onto a second line mid-unit. */
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.metric dt {
+  color: var(--text-dim);
+}
+
+.metric dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.card__foot {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pill--ok {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+}
+
+.pill--warn {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+
+.pill--crit {
+  background: color-mix(in srgb, var(--crit) 16%, transparent);
+  color: var(--crit);
+}
+
+/* ---------- chart ---------- */
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.chart-scroll {
+  overflow-x: auto;
+}
+
+.chart {
+  min-width: 520px;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart .axis text {
+  font-size: 11px;
+  fill: var(--text-dim);
+}
+
+.chart .gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart .series {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.toggle-group {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend__swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ---------- breaches ---------- */
+
+.breaches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.breach {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+
+.breach[data-severity="critical"] {
+  border-left-color: var(--crit);
+}
+
+.breach__msg {
+  flex: 1;
+  min-width: 0;
+}
+
+.breach__time {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- footer ---------- */
+
+.footer {
+  border-top: 1px solid var(--border);
+  padding: 1.5rem 1.25rem 2.5rem;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.8125rem;
+}
+
+.footer p {
+  margin: 0.25rem 0;
+}
+
+.footer__meta {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}

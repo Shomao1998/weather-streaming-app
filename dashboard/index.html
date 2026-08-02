@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weather Streaming Pipeline — Live Dashboard</title>
+    <meta
+      name="description"
+      content="Live weather telemetry ingested every 30 seconds through Azure Event Hubs into a data lake."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%A6%3C/text%3E%3C/svg%3E"
+    />
+    <script src="./config.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="masthead">
+      <div class="masthead__inner">
+        <div>
+          <h1>Weather Streaming Pipeline</h1>
+          <p class="masthead__sub">
+            Telemetry polled every 30&nbsp;seconds, streamed through Azure Event Hubs, landed in a
+            data lake, and served from a curated layer.
+          </p>
+        </div>
+        <div class="status" id="status" role="status" aria-live="polite">
+          <span class="status__dot" data-state="loading"></span>
+          <span class="status__text">Connecting…</span>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section aria-labelledby="conditions-heading">
+        <div class="section-head">
+          <h2 id="conditions-heading">Current conditions</h2>
+          <p class="section-head__meta" id="generated-at"></p>
+        </div>
+        <div class="grid" id="locations">
+          <p class="empty">Loading locations…</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="trend-heading">
+        <div class="section-head">
+          <h2 id="trend-heading">Last 24 hours</h2>
+          <div class="toggle-group" role="group" aria-label="Metric to plot">
+            <button type="button" class="toggle" data-metric="temp_c" aria-pressed="true">
+              Temperature
+            </button>
+            <button type="button" class="toggle" data-metric="humidity" aria-pressed="false">
+              Humidity
+            </button>
+            <button type="button" class="toggle" data-metric="wind_kph" aria-pressed="false">
+              Wind
+            </button>
+            <button type="button" class="toggle" data-metric="pm2_5" aria-pressed="false">
+              PM2.5
+            </button>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-scroll">
+            <div id="chart" class="chart" role="img" aria-label="Time series chart"></div>
+          </div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="breach-heading">
+        <div class="section-head">
+          <h2 id="breach-heading">Threshold breaches</h2>
+          <p class="section-head__meta">
+            Readings that crossed an operational limit in the last 24&nbsp;hours.
+          </p>
+        </div>
+        <div id="breaches" class="breaches">
+          <p class="empty">Loading…</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        Data from weatherapi.com. Pipeline: Azure Functions → Event Hubs → ADLS&nbsp;Gen2 →
+        curated serving layer.
+      </p>
+      <p class="footer__meta" id="footer-meta"></p>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
