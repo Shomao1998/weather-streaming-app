@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -24,7 +25,12 @@ logger = logging.getLogger(__name__)
 # removing 2,880 Key Vault calls a day.
 SECRET_CACHE_TTL_SECONDS = 3600
 
-_lock = threading.Lock()
+# Reentrant on purpose: the accessors below nest — get_weather_client holds the
+# lock while resolving the API key, which takes it again via get_secret, and
+# both producer factories take it again via get_credential. A plain Lock
+# deadlocks there, and the symptom is not an error but a function that hangs
+# until the host's timeout kills it.
+_lock = threading.RLock()
 _credential: Any = None
 _secret_cache: dict[str, tuple[str, float]] = {}
 _event_hub_producer: Any = None
@@ -33,14 +39,32 @@ _weather_client: WeatherApiClient | None = None
 
 
 def get_credential() -> Any:
-    """Managed Identity on Azure, developer credentials locally."""
+    """Managed identity on Azure, developer credentials locally.
+
+    ``DefaultAzureCredential`` walks a chain of sources — environment, workload
+    identity, IMDS, shared token cache, the Azure CLI, PowerShell — and several
+    of those probes block rather than fail fast inside a Function App. That
+    turns a missing-permission problem into a five-minute function timeout with
+    no log line to explain it.
+
+    On Azure the identity is known exactly (``AZURE_CLIENT_ID`` is set by the
+    template), so ask for it directly and skip the chain.
+    """
     global _credential
     if _credential is None:
         with _lock:
             if _credential is None:
-                from azure.identity import DefaultAzureCredential
+                client_id = os.environ.get("AZURE_CLIENT_ID", "").strip()
+                if client_id:
+                    from azure.identity import ManagedIdentityCredential
 
-                _credential = DefaultAzureCredential()
+                    logger.info("Using managed identity %s.", client_id)
+                    _credential = ManagedIdentityCredential(client_id=client_id)
+                else:
+                    from azure.identity import DefaultAzureCredential
+
+                    logger.info("AZURE_CLIENT_ID unset; falling back to DefaultAzureCredential.")
+                    _credential = DefaultAzureCredential()
     return _credential
 
 
@@ -96,12 +120,18 @@ def get_event_hub_producer(settings: Settings | None = None) -> Any:
     if _event_hub_producer is None:
         with _lock:
             if _event_hub_producer is None:
-                from azure.eventhub import EventHubProducerClient
+                from azure.eventhub import EventHubProducerClient, TransportType
 
                 _event_hub_producer = EventHubProducerClient(
                     fully_qualified_namespace=settings.event_hub.namespace,
                     eventhub_name=settings.event_hub.name,
                     credential=get_credential(),
+                    # AMQP's native port 5671 is not reliably open from a
+                    # Function App; over websockets everything rides 443,
+                    # which is the difference between working and hanging
+                    # until the invocation times out.
+                    transport_type=TransportType.AmqpOverWebsocket,
+                    retry_total=3,
                 )
                 logger.info(
                     "Event Hub producer created for %s/%s.",

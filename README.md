@@ -6,8 +6,9 @@ a public dashboard — with alerting on both the pipeline and the data flowing t
 
 | | |
 | --- | --- |
-| **Live dashboard** | _populated after the first deployment_ |
-| **Health endpoint** | _populated after the first deployment_ |
+| **Live dashboard** | https://lively-pond-063e00c0f.7.azurestaticapps.net |
+| **Health endpoint** | https://func-weather-e5lpvy.azurewebsites.net/health |
+| **Live API** | [`/api/latest`](https://func-weather-e5lpvy.azurewebsites.net/api/latest) · [`/api/timeseries`](https://func-weather-e5lpvy.azurewebsites.net/api/timeseries) · [`/api/breaches`](https://func-weather-e5lpvy.azurewebsites.net/api/breaches) |
 | **Stack** | Azure Functions (Python 3.12, Flex Consumption) · Event Hubs · ADLS Gen2 · Application Insights · Static Web Apps · Bicep |
 
 ---

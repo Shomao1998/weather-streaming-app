@@ -4,12 +4,21 @@ This file only wires triggers to work defined in the ``weather`` package. It
 must sit next to ``host.json`` at the root of the deployment package, and there
 must be no ``function.json`` files anywhere — mixing the v1 and v2 models is
 what stopped the previous version from registering any function at all.
-"""
 
-from __future__ import annotations
+Two rules apply to this file and nothing else in the project, because the
+Python worker introspects it to discover functions:
+
+* **No ``from __future__ import annotations``.** PEP 563 turns annotations into
+  strings, and the worker reads them to decide binding types.
+* **``typing.List[...]``, not ``list[...]``.** The worker does not recognise
+  PEP 585 builtin generics when resolving a ``cardinality=MANY`` binding. It
+  does not raise a useful error either: indexing fails silently and the host
+  reports *zero* functions — including every unrelated one in this file.
+"""
 
 import json
 import logging
+from typing import List
 
 import azure.functions as func
 
@@ -43,7 +52,10 @@ def _serve(blob_name: str) -> func.HttpResponse:
     schedule="%INGEST_CURRENT_SCHEDULE%",
     arg_name="timer",
     run_on_startup=False,
-    use_monitor=True,
+    # Schedule monitoring persists a status blob on every tick, which cannot
+    # keep up with a sub-minute schedule — with it enabled this function never
+    # fires at all. The slower timers below keep it.
+    use_monitor=False,
 )
 def ingest_current(timer: func.TimerRequest) -> None:
     """Fast path: current conditions and air quality, every 30 seconds."""
@@ -84,7 +96,7 @@ def ingest_forecast(timer: func.TimerRequest) -> None:
     consumer_group="%EVENT_HUB_CONSUMER_GROUP%",
     cardinality=func.Cardinality.MANY,
 )
-def archive_to_bronze(events: list[func.EventHubEvent]) -> None:
+def archive_to_bronze(events: List[func.EventHubEvent]) -> None:  # noqa: UP006
     """Drain the stream into the lake. Replaces (paid) Event Hubs Capture."""
     payloads = []
     for event in events:

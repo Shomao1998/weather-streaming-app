@@ -50,8 +50,14 @@ class IngestResult:
 def ingest_current(settings: Settings | None = None) -> IngestResult:
     """Poll current conditions for every configured location and publish them."""
     settings = settings or get_settings()
+    # Each of these can block on a network call the first time a worker runs
+    # (Key Vault, then Event Hub). Logging the phase turns "the invocation
+    # timed out after five minutes" into "it timed out resolving the secret".
+    logger.info("ingest_current: resolving weather client")
     client = clients.get_weather_client(settings)
+    logger.info("ingest_current: building sink")
     sink = sinks.build_ingest_sink(settings)
+    logger.info("ingest_current: polling %d location(s)", len(settings.weather.locations))
 
     result = IngestResult()
     records: list[CurrentWeatherRecord] = []

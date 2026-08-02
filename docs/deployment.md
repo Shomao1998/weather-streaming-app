@@ -125,10 +125,41 @@ compared with federated credentials — prefer OIDC where the tenant allows it.
 draws on a different pool. If Flex is also refused, the region does not offer it — check
 `az functionapp list-flexconsumption-locations`.
 
-**The app deploys but no functions appear.** Almost always a packaging problem. `host.json` and
-`function_app.py` must sit at the root of the deployed directory, and no `function.json` may exist
-anywhere — mixing the v1 and v2 programming models causes the host to discover nothing while
-reporting success. `tests/test_function_app.py` asserts both.
+**The app deploys but no functions appear.** The host logs `0 functions loaded` and
+`No job functions found`, and every route 404s. Three distinct causes, all seen on this project:
+
+1. *Packaging.* `host.json` and `function_app.py` must sit at the root of the deployed directory,
+   and no `function.json` may exist anywhere — mixing the v1 and v2 programming models makes the
+   host discover nothing while reporting success. `tests/test_function_app.py` asserts both.
+2. *A binding annotation the worker cannot resolve.* `cardinality=MANY` on an Event Hub trigger
+   must be annotated `typing.List[func.EventHubEvent]`; the PEP 585 form `list[...]` fails
+   indexing, and `from __future__ import annotations` in that file breaks it the same way. There is
+   no error message — indexing simply returns zero, which takes down **every** function in the app,
+   not just the offending one.
+3. *Comparing against a known-good app.* When it is unclear which of the two applies, publish a
+   three-line hello-world to the same Function App. If that registers, the platform, plan, identity
+   and deployment path are all fine and the fault is in the code.
+
+**A function hangs until the timeout with no error.** `Timeout value of 00:05:00 was exceeded` and
+nothing else. A blocking call with no logging around it — reach for a phase log first. Two causes
+here were a non-reentrant lock whose accessors nested (fixed with `RLock`, see
+`tests/test_clients.py`) and `DefaultAzureCredential` probing credential sources that do not
+fail fast inside a Function App (fixed by using `ManagedIdentityCredential` when `AZURE_CLIENT_ID`
+is set).
+
+**Sub-minute timers never fire.** A timer with `use_monitor=True` persists a status blob on every
+tick, which cannot keep up with a schedule faster than once a minute — the function simply never
+runs. Set `use_monitor=False` for those; keep it on for the slower timers, where it gives catch-up
+after a restart.
+
+**`ImportError: Please install websocket-client`.** The Event Hubs SDK does not pull in
+`websocket-client`, and `TransportType.AmqpOverWebsocket` needs it at send time, not import time —
+so it surfaces as a runtime failure long after a clean deployment.
+
+**The host logs bury the application's.** With `logging.logLevel.default` at `Information`, the
+Azure SDK logs every HTTP request it makes; at a 30-second cadence that is thousands of blob
+lease-renewal lines an hour. Keep the default at `Warning` and raise the categories you care about.
+Note that a `"//"` comment key inside `logLevel` is parsed as a category name and throws.
 
 **`ManagedIdentityCredential authentication unavailable`.** The role assignment has not propagated;
 it can take several minutes. If it persists, confirm `AZURE_CLIENT_ID` in the app settings matches

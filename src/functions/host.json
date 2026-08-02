@@ -2,8 +2,10 @@
   "version": "2.0",
   "logging": {
     "logLevel": {
-      "default": "Information",
+      "default": "Warning",
+      "Function": "Information",
       "weather": "Information",
+      "Host.Results": "Information",
       "Host.Aggregator": "Information"
     },
     "applicationInsights": {
@@ -19,6 +21,10 @@
     "version": "[4.*, 5.0.0)"
   },
   "extensions": {
+    "http": {
+      "//": "Routes are declared in full in function_app.py, so the default 'api' prefix would double it up: /api/api/latest.",
+      "routePrefix": ""
+    },
     "eventHubs": {
       "maxEventBatchSize": 100,
       "batchCheckpointFrequency": 1,
