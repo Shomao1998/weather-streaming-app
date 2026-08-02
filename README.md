@@ -17,15 +17,13 @@ a public dashboard — with alerting on both the pipeline and the data flowing t
 
 ## Why this project exists
 
-I worked in consulting on a cloud migration for a large financial institution. One workstream
-proposed shipping on-premise syslog into Azure to store and alert on. It was not adopted: log
-volume was estimated at terabytes minimum against a two-year compliance retention, and monthly
-request volume was unknown — hundreds of millions, possibly billions — so neither the sizing of a
-single App Service nor the cost of storage plus Application Insights ingestion could be justified.
-My own responsibility there was tracking progress across teams and maintaining the dashboard that
-reported it.
-
-This project combines the two, with a public weather API in place of the log source.
+I worked on a requirement for storing network syslog after a cloud migration. The initial proposal
+used Azure storage to hold the logs and Application Insights to detect transfer anomalies, meeting
+a zero-loss requirement and a compliance retention of at least two years; it did not proceed,
+because storage and monitoring costs at terabyte scale were prohibitive. Separately on that project
+I tracked task progress across teams and maintained the dashboard reporting it. Taking cues from
+public portfolio projects, this one merges the two requirements into a streaming weather collection
+and monitoring dashboard.
 
 **How it was built.** I defined the requirements, constraints and acceptance criteria and made the
 scope and cost decisions; the implementation was produced by iterating with an AI coding agent.
