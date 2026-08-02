@@ -234,6 +234,23 @@ Roughly **$12–14 a month**, dominated by one line item:
 Event Hubs is the only meaningful cost and the only component that is strictly optional — the sink
 layer is an interface, and `EVENT_HUB_ENABLED=false` makes ingestion write straight to bronze.
 
+### Retention
+
+Storage that only ever grows is how a log platform dies on cost rather than on architecture. Each
+layer states its own policy, in `infra/main.bicep` rather than in someone's head:
+
+| Layer | Policy |
+| --- | --- |
+| Event Hubs | 1 day — a buffer, not a store; the archive function drains it continuously |
+| `bronze` | Cool at 30 days → Archive at 90 → deleted at 730 (a two-year compliance retention) |
+| `silver` | Cool at 90 days; never archived, never deleted, and rebuildable from bronze |
+| `serving` | always Hot — three small files, rewritten hourly and read on every page load |
+| Log Analytics | 30 days |
+
+Archiving bronze is safe precisely because nothing downstream reads it: `curate` only ever touches
+the last 24 hours, so raw data is cold within a day of landing. Retrieving it later costs a
+rehydration wait, which is the right trade for data kept to satisfy an auditor rather than a query.
+
 ## Limitations
 
 - Event Hubs Basic retains one day and allows a single consumer group. Fine here, because the

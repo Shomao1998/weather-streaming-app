@@ -53,6 +53,18 @@ param alertMaxWindKph int = 60
 param alertMaxPm25 int = 55
 param alertMaxUsEpaIndex int = 4
 
+@description('Days before raw bronze data moves to the Cool tier.')
+param bronzeCoolAfterDays int = 30
+
+@description('Days before raw bronze data moves to Archive. Reading it then requires rehydration.')
+param bronzeArchiveAfterDays int = 90
+
+@description('Days before raw bronze data is deleted. 730 mirrors a two-year compliance retention.')
+param bronzeRetentionDays int = 730
+
+@description('Days before the curated silver layer moves to the Cool tier.')
+param silverCoolAfterDays int = 90
+
 @description('Create the Static Web App that hosts the public dashboard.')
 param deployDashboard bool = true
 
@@ -197,6 +209,71 @@ resource silverContainer 'Microsoft.Storage/storageAccounts/blobServices/contain
 resource servingContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: lakeBlobService
   name: 'serving'
+}
+
+// Storage that only ever grows is how a log platform dies on cost rather than
+// on architecture — the problem that sank the original version of this idea.
+// Each layer's retention is therefore a decision, not a default.
+//
+// `serving` is deliberately absent: three small files, rewritten hourly and
+// read on every page load, so they must stay Hot.
+resource lakeLifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: lakeStorage
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          name: 'bronze-tier-and-expire'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: ['blockBlob']
+              prefixMatch: ['bronze/']
+            }
+            actions: {
+              baseBlob: {
+                // Curation only ever reads the last 24 hours, so raw data is
+                // cold almost immediately after it lands. Archive is safe for
+                // the same reason: nothing in this pipeline reads it, and a
+                // compliance retrieval can afford a rehydration wait.
+                tierToCool: {
+                  daysAfterModificationGreaterThan: bronzeCoolAfterDays
+                }
+                tierToArchive: {
+                  daysAfterModificationGreaterThan: bronzeArchiveAfterDays
+                }
+                delete: {
+                  daysAfterModificationGreaterThan: bronzeRetentionDays
+                }
+              }
+            }
+          }
+        }
+        {
+          name: 'silver-tier'
+          enabled: true
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: ['blockBlob']
+              prefixMatch: ['silver/']
+            }
+            actions: {
+              baseBlob: {
+                // Power BI reads this layer, so it is cooled but never archived
+                // and never deleted — and it is rebuildable from bronze anyway.
+                tierToCool: {
+                  daysAfterModificationGreaterThan: silverCoolAfterDays
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
