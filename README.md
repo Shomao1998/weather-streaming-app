@@ -17,13 +17,35 @@ a public dashboard — with alerting on both the pipeline and the data flowing t
 
 ## Why this project exists
 
-It reproduces a system I worked on: collecting **syslog from on-premise servers, shipping it to
-cloud storage, and alerting on it**. That data cannot leave its network, so this build swaps the
-source for a public weather API and keeps everything else — the ingestion cadence, the buffering
-layer, the raw/curated split, the threshold alerting, the operational dashboard.
+It fuses two pieces of work I did at a financial institution that was moving out of its own data
+centre.
 
-The substitution is deliberate rather than cosmetic. Weather readings share the properties that
-make log ingestion awkward:
+The first was a proposal to ship **syslog from on-premise servers into Azure, store it, and alert
+on it**. **It was never adopted.** Compliance required at least two years of retention, and at the
+volume those servers produced, storage plus monitoring made the business case fail. The
+architecture was fine; the economics were not.
+
+The second was ongoing rather than proposed: internal workflow automation, and the dashboards that
+reported on it.
+
+This project is the two of them put together, with a free public weather API standing in for the
+log source. The real data could not leave its network — and the volume that killed the original
+proposal is not something a portfolio project should reproduce anyway.
+
+**How it was built.** This is a vibe-coding project: I set the requirements, the constraints and
+what "done" meant, and made the calls that mattered — what to keep, what to cut, what was worth
+paying for — while the implementation was written by iterating with an AI coding agent. The
+reasoning behind each decision is written down below rather than assumed, so the choices can be
+argued with instead of taken on trust.
+
+That history is why cost appears in this README at all. Every component has a monthly figure next
+to it, the one expensive component is optional behind a configuration flag, and the retention of
+each layer is a stated decision rather than a default. **"It works, but nobody can afford to run
+it" is a real way for a data platform to fail**, and the first version of this idea failed exactly
+that way.
+
+The substitution of weather for logs is deliberate rather than cosmetic. Weather readings share the
+properties that make log ingestion awkward:
 
 - **They arrive faster than they change.** The upstream API refreshes every 10–15 minutes while the
   poller runs every 30 seconds, so the stream is mostly duplicates — the same problem as a device
