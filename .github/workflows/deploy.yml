@@ -1,39 +1,166 @@
-name: Deploy Python project to Azure Function App
+name: Deploy
 
+# Only main deploys, and only after CI has a chance to fail. The previous
+# version of this workflow fired on every push to every branch, which meant a
+# work-in-progress commit went straight to the live app.
 on:
-  [push]
+  push:
+    branches: [main]
+    paths:
+      - "src/functions/**"
+      - "dashboard/**"
+      - "infra/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: "Run the Bicep deployment before deploying code"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # federated credentials — no stored secrets
+  contents: read
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'app-weather-streaming-1'               # Azure 上的 Function App 名称
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'weatherTimerStreaming'         # 部署包路径，包含 __init__.py 和 function.json 的文件夹
-  PYTHON_VERSION: '3.10'                                          # 使用的 Python 版本
+  RESOURCE_GROUP: rg-weather-streaming
 
 jobs:
-  build-and-deploy:
+  infrastructure:
+    name: Infrastructure
     runs-on: ubuntu-latest
-
+    outputs:
+      functionAppName: ${{ steps.resolve.outputs.functionAppName }}
+      functionAppUrl: ${{ steps.resolve.outputs.functionAppUrl }}
+      dashboardName: ${{ steps.resolve.outputs.dashboardName }}
     steps:
-    - name: Checkout GitHub Action
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-    - name: Setup Python ${{ env.PYTHON_VERSION }} Environment
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    - name: Resolve Project Dependencies Using Pip
-      shell: bash
-      run: |
-        pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-        pip install -r requirements.txt --target=".python_packages/lib/site-packages"
-        popd
+      - name: Deploy Bicep
+        # Infrastructure changes are deliberate: the template only runs when
+        # infra/ changed or someone asked for it. The deployment is idempotent
+        # either way.
+        if: >-
+          github.event_name == 'push' &&
+          contains(join(github.event.commits.*.modified, ','), 'infra/') ||
+          inputs.deploy_infrastructure
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "gh-${{ github.run_id }}" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.parameters.json
 
-    - name: Run Azure Functions Action
-      uses: Azure/functions-action@v1
-      id: fa
-      with:
-        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        scm-do-build-during-deployment: true
-        enable-oryx-build: true
+      - name: Resolve deployment outputs
+        id: resolve
+        # Read from the resource group rather than the deployment, so code-only
+        # runs that skipped Bicep still know where to deploy.
+        run: |
+          FUNC=$(az functionapp list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          HOST=$(az functionapp list -g "$RESOURCE_GROUP" --query "[0].defaultHostName" -o tsv)
+          SWA=$(az staticwebapp list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          test -n "$FUNC" || { echo "::error::No Function App found — run the Bicep deployment first."; exit 1; }
+          echo "functionAppName=$FUNC" >> "$GITHUB_OUTPUT"
+          echo "functionAppUrl=https://$HOST" >> "$GITHUB_OUTPUT"
+          echo "dashboardName=$SWA" >> "$GITHUB_OUTPUT"
+
+  function-app:
+    name: Function App
+    needs: infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ needs.infrastructure.outputs.functionAppName }}
+          package: src/functions
+          sku: flexconsumption
+          # Flex Consumption builds dependencies on the platform; shipping a
+          # locally-resolved site-packages tree would bake in the runner's
+          # architecture.
+          remote-build: true
+
+      - name: Wait for the host to come back
+        run: sleep 45
+
+      - name: Health check
+        run: |
+          URL="${{ needs.infrastructure.outputs.functionAppUrl }}/health"
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/health.json -w "%{http_code}" "$URL" || true)
+            if [ "$code" = "200" ]; then
+              echo "Healthy:"; cat /tmp/health.json; exit 0
+            fi
+            echo "attempt $attempt: HTTP $code"
+            sleep 20
+          done
+          echo "::error::Health endpoint never returned 200."
+          cat /tmp/health.json || true
+          exit 1
+
+  dashboard:
+    name: Dashboard
+    needs: [infrastructure, function-app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Point the dashboard at the deployed API
+        # config.js is committed with an empty apiBase so the page falls back
+        # to sample data locally; the deployed copy gets the real host.
+        run: |
+          cat > dashboard/config.js <<EOF
+          // Generated by .github/workflows/deploy.yml — do not edit by hand.
+          window.WEATHER_CONFIG = {
+            apiBase: "${{ needs.infrastructure.outputs.functionAppUrl }}",
+            refreshSeconds: 60,
+          };
+          EOF
+          cat dashboard/config.js
+
+      - name: Fetch the Static Web Apps deployment token
+        id: swa
+        run: |
+          TOKEN=$(az staticwebapp secrets list \
+            --name "${{ needs.infrastructure.outputs.dashboardName }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: dashboard
+          skip_app_build: true
+          skip_api_build: true

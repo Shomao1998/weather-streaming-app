@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "weather-dashboard",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "scripts/serve_dashboard.py"
+      ],
+      "port": 4280,
+      "autoPort": true
+    }
+  ]
+}

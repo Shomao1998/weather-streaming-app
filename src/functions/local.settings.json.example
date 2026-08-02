@@ -1,0 +1,43 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "APP_ENVIRONMENT": "local",
+
+    "//": "--- Weather API ---",
+    "WEATHER_API_KEY": "<your weatherapi.com key — local only, never committed>",
+    "WEATHER_LOCATIONS": "Tokyo,Osaka,Sapporo",
+    "WEATHER_FORECAST_DAYS": "3",
+    "WEATHER_API_TIMEOUT_SECONDS": "10",
+    "WEATHER_API_MAX_RETRIES": "3",
+
+    "//KEY_VAULT_URL": "Set on Azure instead of WEATHER_API_KEY",
+
+    "//2": "--- Schedules (NCRONTAB, 6 fields: sec min hour day month dow) ---",
+    "INGEST_CURRENT_SCHEDULE": "*/30 * * * * *",
+    "INGEST_FORECAST_SCHEDULE": "0 */30 * * * *",
+    "CURATE_SCHEDULE": "0 5 * * * *",
+
+    "//3": "--- Event Hub: off locally unless you point it at a real namespace ---",
+    "EVENT_HUB_ENABLED": "false",
+    "EVENT_HUB_NAME": "weather-events",
+    "EVENT_HUB_CONSUMER_GROUP": "$Default",
+    "EVENT_HUB_CONNECTION__fullyQualifiedNamespace": "<namespace>.servicebus.windows.net",
+
+    "//4": "--- Storage: Azurite locally, managed identity on Azure ---",
+    "STORAGE_ENABLED": "true",
+    "STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "//STORAGE_ACCOUNT_URL": "https://<account>.blob.core.windows.net",
+    "STORAGE_BRONZE_CONTAINER": "bronze",
+    "STORAGE_SILVER_CONTAINER": "silver",
+    "STORAGE_SERVING_CONTAINER": "serving",
+
+    "//5": "--- Monitoring thresholds ---",
+    "ALERT_MAX_TEMP_C": "38",
+    "ALERT_MIN_TEMP_C": "-10",
+    "ALERT_MAX_WIND_KPH": "60",
+    "ALERT_MAX_PM2_5": "55",
+    "ALERT_MAX_US_EPA_INDEX": "4"
+  }
+}

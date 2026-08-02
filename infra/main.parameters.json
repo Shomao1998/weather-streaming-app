@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "eastus" },
+    "namePrefix": { "value": "weather" },
+    "environmentName": { "value": "prod" },
+    "existingEventHubNamespaceName": { "value": "hb-weatherstreamingnamespace" },
+    "existingKeyVaultName": { "value": "kv-weatherstreaming-1" },
+    "eventHubName": { "value": "weather-events" },
+    "weatherLocations": { "value": "Tokyo,Osaka,Sapporo" },
+    "weatherApiKeySecretName": { "value": "weatherapi" },
+    "ingestCurrentSchedule": { "value": "*/30 * * * * *" },
+    "ingestForecastSchedule": { "value": "0 */30 * * * *" },
+    "curateSchedule": { "value": "0 5 * * * *" },
+    "alertEmail": { "value": "" },
+    "deployDashboard": { "value": true }
+  }
+}

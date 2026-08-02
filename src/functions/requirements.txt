@@ -1,0 +1,18 @@
+# Runtime dependencies for the Azure Function App.
+# Do NOT add azure-functions-worker here — the platform manages it.
+# Version ranges are capped at the next major to keep deployments reproducible
+# without pinning us out of security patches.
+
+azure-functions>=1.21,<2
+azure-eventhub>=5.12,<6
+# Required for TransportType.AmqpOverWebsocket — the Event Hubs SDK does not
+# pull it in, and without it the producer raises ImportError at send time.
+websocket-client>=1.8,<2
+azure-identity>=1.19,<2
+azure-keyvault-secrets>=4.9,<5
+azure-storage-blob>=12.24,<13
+requests>=2.32,<3
+
+# Optional: enables Parquet output for the silver layer (Power BI reads it
+# directly). The curation step falls back to CSV if this is unavailable.
+pyarrow>=18,<22
