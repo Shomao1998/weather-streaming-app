@@ -1,0 +1,60 @@
+name: CI
+
+# Runs on everything. Needs no Azure credentials, so it works on forks and on
+# branches that have no deployment target.
+on:
+  push:
+    branches-ignore: []
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            src/functions/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest --cov=weather --cov-report=term-missing
+
+      - name: Sample data still regenerates
+        # Shape drift is caught by tests/test_sample_data.py; this only proves
+        # the generator itself still runs against the current code.
+        run: python scripts/generate_sample_data.py
+
+  infra:
+    name: Validate Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile the template
+        # Catches syntax and type errors without needing a subscription.
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+      - name: Lint the template
+        run: |
+          output=$(az bicep lint --file infra/main.bicep 2>&1) || true
+          echo "$output"
+          if echo "$output" | grep -qi "error"; then exit 1; fi
