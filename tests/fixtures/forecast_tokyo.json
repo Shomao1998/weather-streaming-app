@@ -1,0 +1,83 @@
+{
+  "location": {
+    "name": "Tokyo",
+    "region": "Tokyo",
+    "country": "Japan",
+    "lat": 35.6895,
+    "lon": 139.6917,
+    "tz_id": "Asia/Tokyo",
+    "localtime_epoch": 1754092800,
+    "localtime": "2025-08-02 09:00"
+  },
+  "current": {
+    "last_updated_epoch": 1754092500,
+    "temp_c": 31.2,
+    "condition": { "text": "Partly cloudy" }
+  },
+  "forecast": {
+    "forecastday": [
+      {
+        "date": "2025-08-02",
+        "date_epoch": 1754092800,
+        "day": {
+          "maxtemp_c": 34.8,
+          "mintemp_c": 26.1,
+          "avgtemp_c": 30.2,
+          "maxwind_kph": 22.0,
+          "totalprecip_mm": 1.2,
+          "avghumidity": 71,
+          "daily_chance_of_rain": 63,
+          "uv": 8.0,
+          "condition": { "text": "Patchy rain nearby", "code": 1063 }
+        }
+      },
+      {
+        "date": "2025-08-03",
+        "day": {
+          "maxtemp_c": 33.1,
+          "mintemp_c": 25.4,
+          "avgtemp_c": 29.0,
+          "maxwind_kph": 18.7,
+          "totalprecip_mm": 0.0,
+          "avghumidity": 66,
+          "daily_chance_of_rain": 0,
+          "uv": 9.0,
+          "condition": { "text": "Sunny", "code": 1000 }
+        }
+      },
+      {
+        "date": "2025-08-04",
+        "day": {
+          "maxtemp_c": 35.6,
+          "mintemp_c": 27.0,
+          "avgtemp_c": 31.4,
+          "maxwind_kph": 25.2,
+          "totalprecip_mm": 4.8,
+          "avghumidity": 74,
+          "daily_chance_of_rain": 85,
+          "uv": 7.0,
+          "condition": { "text": "Moderate rain", "code": 1189 }
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "alert": [
+      {
+        "headline": "Heat Advisory issued for Tokyo Metropolitan Area",
+        "msgtype": "Alert",
+        "severity": "Moderate",
+        "urgency": "Expected",
+        "areas": "Tokyo",
+        "category": "Met",
+        "certainty": "Likely",
+        "event": "Heat Advisory",
+        "note": "",
+        "effective": "2025-08-02T05:00:00+09:00",
+        "expires": "2025-08-02T20:00:00+09:00",
+        "desc": "Daytime temperatures are expected to exceed 35 degrees Celsius.",
+        "instruction": "Stay hydrated and avoid strenuous outdoor activity."
+      }
+    ]
+  }
+}

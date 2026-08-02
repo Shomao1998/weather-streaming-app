@@ -1,0 +1,26 @@
+[project]
+name = "weather-streaming-app"
+version = "1.0.0"
+description = "Streaming weather ingestion, lake storage and monitoring on Azure"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src/functions"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:weather.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src/functions", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "B008",   # function calls in argument defaults — used deliberately for DI
+    "SIM105", # contextlib.suppress reads worse than try/except here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
