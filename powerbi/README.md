@@ -95,7 +95,12 @@ portfolio work: the tenant admin decides whether Publish to web is allowed at al
 dies with the account. The live view here is a Static Web App precisely so that nothing on a
 résumé depends on an account someone else can revoke.
 
-## Files
+## Building it
 
-Save the report here as `weather.pbit` (template, no data) rather than `.pbix`, so the repository
-does not carry a data extract, and add screenshots to `docs/images/`.
+Step-by-step against the real 35-column schema — Power Query steps, the date table, every DAX
+measure, and a two-page layout: **[modeling.md](modeling.md)**.
+
+Save the result as `weather.pbit` (template, no data) rather than `.pbix`, so the repository does
+not carry a data extract, and add screenshots to `../docs/images/`.
+
+Note that Power BI Desktop is Windows-only; on macOS this needs a VM or a cloud Windows host.
