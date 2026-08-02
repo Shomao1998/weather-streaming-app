@@ -20,8 +20,14 @@ Power BI Desktop is free.
 1. **Get data → Azure → Azure Data Lake Storage Gen2**
 2. URL: `https://<lake account>.dfs.core.windows.net/silver`
    (find it with `az storage account list -g rg-weather-streaming --query "[?contains(name,'lake')].name" -o tsv`)
-3. Authenticate with **Organizational account** — the same account that has
-   `Storage Blob Data Reader` or higher on the account.
+3. Authenticate with **Account key**. Organizational account works too, but only for an identity
+   in the *storage account's own* Entra tenant — a school or employer account from a different
+   tenant has no RBAC here, and cross-tenant B2B invites are a lot of setup for a report. The key
+   sidesteps the question entirely:
+
+   ```bash
+   az storage account keys list -g rg-weather-streaming -n <lake account> --query "[0].value" -o tsv
+   ```
 4. In the navigator, choose **Combine → Combine & Transform**. Power Query reads the
    `date=YYYY-MM-DD` folders as a partition column automatically.
 5. Set types: `observed_at_utc` and `ingested_at_utc` to DateTime, the measures to Decimal.
@@ -80,8 +86,14 @@ The last row is the one that catches people out: real-time tiles only exist on d
 without paid capacity — which is precisely why the live view is a Static Web App and Power BI covers
 the analytical side.
 
-Visual Studio Enterprise subscriptions have historically included a Power BI Pro licence; check
-[my.visualstudio.com](https://my.visualstudio.com) → Benefits before paying for one.
+A Visual Studio Enterprise subscription does **not** include Pro — the benefit listed at
+[my.visualstudio.com](https://my.visualstudio.com) is the Power BI *Free* plan, which anyone can
+sign up for. Budget for Pro separately if a published report matters to you.
+
+A school or employer account satisfies the work/school requirement, but it is a poor host for
+portfolio work: the tenant admin decides whether Publish to web is allowed at all, and the link
+dies with the account. The live view here is a Static Web App precisely so that nothing on a
+résumé depends on an account someone else can revoke.
 
 ## Files
 
