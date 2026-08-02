@@ -17,32 +17,23 @@ a public dashboard — with alerting on both the pipeline and the data flowing t
 
 ## Why this project exists
 
-It fuses two pieces of work I did at a financial institution that was moving out of its own data
-centre.
+I worked in consulting on a cloud migration for a large financial institution. One workstream
+proposed shipping on-premise syslog into Azure to store and alert on. It was not adopted: log
+volume was estimated at terabytes minimum against a two-year compliance retention, and monthly
+request volume was unknown — hundreds of millions, possibly billions — so neither the sizing of a
+single App Service nor the cost of storage plus Application Insights ingestion could be justified.
+My own responsibility there was tracking progress across teams and maintaining the dashboard that
+reported it.
 
-The first was a proposal to ship **syslog from on-premise servers into Azure, store it, and alert
-on it**. **It was never adopted.** Compliance required at least two years of retention, and at the
-volume those servers produced, storage plus monitoring made the business case fail. The
-architecture was fine; the economics were not.
+This project combines the two, with a public weather API in place of the log source.
 
-The second was ongoing rather than proposed: internal workflow automation, and the dashboards that
-reported on it.
+**How it was built.** I defined the requirements, constraints and acceptance criteria and made the
+scope and cost decisions; the implementation was produced by iterating with an AI coding agent.
 
-This project is the two of them put together, with a free public weather API standing in for the
-log source. The real data could not leave its network — and the volume that killed the original
-proposal is not something a portfolio project should reproduce anyway.
-
-**How it was built.** This is a vibe-coding project: I set the requirements, the constraints and
-what "done" meant, and made the calls that mattered — what to keep, what to cut, what was worth
-paying for — while the implementation was written by iterating with an AI coding agent. The
-reasoning behind each decision is written down below rather than assumed, so the choices can be
-argued with instead of taken on trust.
-
-That history is why cost appears in this README at all. Every component has a monthly figure next
-to it, the one expensive component is optional behind a configuration flag, and the retention of
-each layer is a stated decision rather than a default. **"It works, but nobody can afford to run
-it" is a real way for a data platform to fail**, and the first version of this idea failed exactly
-that way.
+That history shapes how cost is handled here: Application Insights sampling is enabled, the default
+log level is `Warning` (at `Information` the Azure SDK logs every HTTP request it issues), every
+storage layer carries an explicit retention policy, and the single expensive component sits behind
+a configuration flag. A technically sound design can still fail on operating cost.
 
 The substitution of weather for logs is deliberate rather than cosmetic. Weather readings share the
 properties that make log ingestion awkward:
@@ -236,8 +227,8 @@ layer is an interface, and `EVENT_HUB_ENABLED=false` makes ingestion write strai
 
 ### Retention
 
-Storage that only ever grows is how a log platform dies on cost rather than on architecture. Each
-layer states its own policy, in `infra/main.bicep` rather than in someone's head:
+Storage that only ever grows is the main reason a log platform becomes constrained by cost rather
+than by architecture. Each layer's policy is declared in `infra/main.bicep`:
 
 | Layer | Policy |
 | --- | --- |
