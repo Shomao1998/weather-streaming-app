@@ -1,18 +1,18 @@
 flowchart TB
     API["weatherapi.com"]
-    C["ingest_current<br>timer 30s"]
-    F["ingest_forecast<br>timer 30min"]
+    C["ingest_current<br/>timer 30s"]
+    F["ingest_forecast<br/>timer 30min"]
     EH[["Event Hubs"]]
     AR["archive_to_bronze"]
-    B[("bronze<br>raw JSONL")]
-    CU["curate<br>timer hourly"]
-    S[("silver<br>Parquet")]
-    SV[("serving<br>JSON")]
+    B[("bronze<br/>raw JSONL")]
+    CU["curate<br/>timer hourly"]
+    S[("silver<br/>Parquet")]
+    SV[("serving<br/>JSON")]
     HTTP["HTTP API"]
     DASH["Static Web App"]
     PBI["Power BI"]
     AI["Application Insights"]
-    ALERT["Azure Monitor<br>alert rules"]
+    ALERT["Azure Monitor<br/>alert rules"]
 
     API --> C & F
     C & F --> EH
