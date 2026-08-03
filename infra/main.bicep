@@ -691,7 +691,12 @@ resource breachAlert 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview'
     criteria: {
       allOf: [
         {
-          query: 'traces | where message contains "THRESHOLD_BREACH" and severityLevel >= 3 | summarize Count = count()'
+          // startswith, not contains: KQL's contains is case-insensitive, so it
+          // also matches the archive function's own "wrote ... bronze/
+          // threshold_breach/..." lines. Only severityLevel keeps those out
+          // today, which would stop being true the moment a failed blob write
+          // logged that path as an error.
+          query: 'traces | where message startswith "THRESHOLD_BREACH" and severityLevel >= 3 | summarize Count = count()'
           timeAggregation: 'Total'
           metricMeasureColumn: 'Count'
           operator: 'GreaterThan'
