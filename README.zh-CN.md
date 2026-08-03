@@ -43,40 +43,32 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
 ## 架构
 
 ```mermaid
-flowchart LR
-    API[weatherapi.com]
-
-    subgraph ingest["采集"]
-        C["ingest_current<br/>定时 · 30秒"]
-        F["ingest_forecast<br/>定时 · 30分钟"]
-    end
-
-    EH[["Event Hubs<br/>weather-events"]]
-    AR["archive_to_bronze<br/>Event Hub 触发"]
-
-    subgraph lake["ADLS Gen2 数据湖"]
-        B[("bronze<br/>原始 JSONL")]
-        S[("silver<br/>Parquet")]
-        SV[("serving<br/>聚合 JSON")]
-    end
-
-    CU["curate<br/>定时 · 每小时"]
-    HTTP["HTTP API<br/>/api/latest · /api/timeseries"]
-    DASH["Static Web App<br/>公开看板"]
+flowchart TB
+    API["weatherapi.com"]
+    C["ingest_current<br>定时 30 秒"]
+    F["ingest_forecast<br>定时 30 分钟"]
+    EH[["Event Hubs"]]
+    AR["archive_to_bronze"]
+    B[("bronze<br>原始 JSONL")]
+    CU["curate<br>定时 每小时"]
+    S[("silver<br>Parquet")]
+    SV[("serving<br>聚合 JSON")]
+    HTTP["HTTP API"]
+    DASH["Static Web App"]
     PBI["Power BI"]
-
     AI["Application Insights"]
-    ALERT["Azure Monitor<br/>告警规则"]
+    ALERT["Azure Monitor<br>告警规则"]
 
     API --> C & F
     C & F --> EH
-    EH --> AR --> B
+    EH --> AR
+    AR --> B
     B --> CU
     CU --> S & SV
-    SV --> HTTP --> DASH
+    SV --> HTTP
+    HTTP --> DASH
     S --> PBI
-    C -.阈值突破.-> AI
-    ingest -.遥测.-> AI
+    C -. 阈值突破 .-> AI
     AI --> ALERT
 ```
 

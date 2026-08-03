@@ -50,40 +50,32 @@ Weather data substitutes for logs because the two share three properties:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    API[weatherapi.com]
-
-    subgraph ingest["Ingestion"]
-        C["ingest_current<br/>timer · 30s"]
-        F["ingest_forecast<br/>timer · 30min"]
-    end
-
-    EH[["Event Hubs<br/>weather-events"]]
-    AR["archive_to_bronze<br/>Event Hub trigger"]
-
-    subgraph lake["ADLS Gen2"]
-        B[("bronze<br/>raw JSONL")]
-        S[("silver<br/>Parquet")]
-        SV[("serving<br/>aggregated JSON")]
-    end
-
-    CU["curate<br/>timer · hourly"]
-    HTTP["HTTP API<br/>/api/latest · /api/timeseries"]
-    DASH["Static Web App<br/>public dashboard"]
+flowchart TB
+    API["weatherapi.com"]
+    C["ingest_current<br>timer 30s"]
+    F["ingest_forecast<br>timer 30min"]
+    EH[["Event Hubs"]]
+    AR["archive_to_bronze"]
+    B[("bronze<br>raw JSONL")]
+    CU["curate<br>timer hourly"]
+    S[("silver<br>Parquet")]
+    SV[("serving<br>JSON")]
+    HTTP["HTTP API"]
+    DASH["Static Web App"]
     PBI["Power BI"]
-
     AI["Application Insights"]
-    ALERT["Azure Monitor<br/>alert rules"]
+    ALERT["Azure Monitor<br>alert rules"]
 
     API --> C & F
     C & F --> EH
-    EH --> AR --> B
+    EH --> AR
+    AR --> B
     B --> CU
     CU --> S & SV
-    SV --> HTTP --> DASH
+    SV --> HTTP
+    HTTP --> DASH
     S --> PBI
-    C -.threshold breaches.-> AI
-    ingest -.telemetry.-> AI
+    C -. threshold breaches .-> AI
     AI --> ALERT
 ```
 
