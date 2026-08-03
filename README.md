@@ -26,8 +26,8 @@ in the Archive tier** — combined with Application Insights monitoring charges 
 the project could absorb.
 
 Separately on that project I tracked task progress across teams and maintained the dashboard
-reporting it. Taking cues from public portfolio projects, this one merges the two requirements into
-a streaming weather collection and monitoring dashboard.
+reporting it. Drawing on other open-source portfolio projects, this one merges the two
+requirements into a streaming weather collection and monitoring dashboard.
 
 **Build method.** I defined the requirements, constraints and acceptance criteria and made the
 scope and cost decisions; the implementation was produced by iterating with an AI coding agent.
