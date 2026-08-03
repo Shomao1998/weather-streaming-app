@@ -43,7 +43,7 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
 ## 架构
 
 ```mermaid
-flowchart TB
+flowchart LR
     API["weatherapi.com"]
     C["ingest_current<br>定时 30 秒"]
     F["ingest_forecast<br>定时 30 分钟"]

@@ -50,7 +50,7 @@ Weather data substitutes for logs because the two share three properties:
 ## Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
     API["weatherapi.com"]
     C["ingest_current<br>timer 30s"]
     F["ingest_forecast<br>timer 30min"]
