@@ -42,35 +42,14 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
 
 ## 架构
 
-```mermaid
-flowchart LR
-    API["weatherapi.com"]
-    C["ingest_current<br>定时 30 秒"]
-    F["ingest_forecast<br>定时 30 分钟"]
-    EH[["Event Hubs"]]
-    AR["archive_to_bronze"]
-    B[("bronze<br>原始 JSONL")]
-    CU["curate<br>定时 每小时"]
-    S[("silver<br>Parquet")]
-    SV[("serving<br>聚合 JSON")]
-    HTTP["HTTP API"]
-    DASH["Static Web App"]
-    PBI["Power BI"]
-    AI["Application Insights"]
-    ALERT["Azure Monitor<br>告警规则"]
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-zh-dark.svg">
+    <img src="docs/images/architecture-zh-light.svg" alt="管道架构：weatherapi.com 经两个定时函数写入 Event Hubs；archive_to_bronze 将流排空到 bronze 层；curate 每小时加工出 silver Parquet 与 serving JSON；serving 经 HTTP API 供给 Static Web App 看板，silver 供给 Power BI；阈值突破进入 Application Insights 并触发 Azure Monitor 告警规则。" width="560">
+  </picture>
+</p>
 
-    API --> C & F
-    C & F --> EH
-    EH --> AR
-    AR --> B
-    B --> CU
-    CU --> S & SV
-    SV --> HTTP
-    HTTP --> DASH
-    S --> PBI
-    C -. 阈值突破 .-> AI
-    AI --> ALERT
-```
+<sub>图源： <a href="docs/architecture.zh-CN.mmd"><code>docs/architecture.zh-CN.mmd</code></a></sub>
 
 ### 五个函数
 

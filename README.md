@@ -49,35 +49,14 @@ Weather data substitutes for logs because the two share three properties:
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    API["weatherapi.com"]
-    C["ingest_current<br>timer 30s"]
-    F["ingest_forecast<br>timer 30min"]
-    EH[["Event Hubs"]]
-    AR["archive_to_bronze"]
-    B[("bronze<br>raw JSONL")]
-    CU["curate<br>timer hourly"]
-    S[("silver<br>Parquet")]
-    SV[("serving<br>JSON")]
-    HTTP["HTTP API"]
-    DASH["Static Web App"]
-    PBI["Power BI"]
-    AI["Application Insights"]
-    ALERT["Azure Monitor<br>alert rules"]
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
+    <img src="docs/images/architecture-light.svg" alt="Pipeline architecture: weatherapi.com feeds two timer functions into Event Hubs; archive_to_bronze drains the stream into a bronze layer; curate runs hourly into silver Parquet and serving JSON; serving is exposed through an HTTP API to a Static Web App dashboard, silver goes to Power BI; threshold breaches flow to Application Insights and on to Azure Monitor alert rules." width="560">
+  </picture>
+</p>
 
-    API --> C & F
-    C & F --> EH
-    EH --> AR
-    AR --> B
-    B --> CU
-    CU --> S & SV
-    SV --> HTTP
-    HTTP --> DASH
-    S --> PBI
-    C -. threshold breaches .-> AI
-    AI --> ALERT
-```
+<sub>Diagram source: <a href="docs/architecture.mmd"><code>docs/architecture.mmd</code></a></sub>
 
 ### The five functions
 
