@@ -56,7 +56,7 @@ Weather data substitutes for logs because the two share three properties:
   </picture>
 </p>
 
-<sub>Diagram source: <a href="docs/architecture.mmd"><code>docs/architecture.mmd</code></a></sub>
+<sub>Diagram source: <a href="scripts/render_architecture.py"><code>scripts/render_architecture.py</code></a>. Product icons are Microsoft's official Azure architecture icons, used unmodified under the terms Microsoft publishes with them; weatherapi.com is drawn as a plain shape because it is not a Microsoft product.</sub>
 
 ### The five functions
 
@@ -147,7 +147,7 @@ src/functions/                    deployment package — host.json at its root
   weather/                        config · api · models · transform · monitoring
                                   clients · sinks · pipeline · serving
 dashboard/                        three files, no framework, no external requests
-scripts/                          local dashboard server, sample data, OIDC setup
+scripts/                          architecture render, dashboard server, sample data, OIDC
 tests/                            92 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting

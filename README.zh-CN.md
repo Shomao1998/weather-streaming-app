@@ -49,7 +49,7 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
   </picture>
 </p>
 
-<sub>图源： <a href="docs/architecture.zh-CN.mmd"><code>docs/architecture.zh-CN.mmd</code></a></sub>
+<sub>图源：<a href="scripts/render_architecture.py"><code>scripts/render_architecture.py</code></a>。产品图标为微软官方 Azure 架构图标，按其随附条款原样使用、未作变形；weatherapi.com 是第三方服务，因此用中性图形表示。</sub>
 
 ### 五个函数
 
@@ -131,7 +131,7 @@ src/functions/                    部署包 —— host.json 在其根目录
   weather/                        config · api · models · transform · monitoring
                                   clients · sinks · pipeline · serving
 dashboard/                        三个文件，无框架，无外部请求
-scripts/                          本地看板服务、样本数据生成、OIDC 配置
+scripts/                          架构图渲染、本地看板服务、样本数据、OIDC 配置
 tests/                            99 个测试
 docs/architecture.md              更深的权衡、成本、被否掉的备选方案
 docs/deployment.md                部署手册、首次部署清单、排障
