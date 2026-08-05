@@ -183,6 +183,36 @@ level overrides both the frequency window and a mute.
 
 Full design, API contract and the phase-two plan: **[docs/advice.md](docs/advice.md)**.
 
+### v2 — grounded in official guidance
+
+Phase two replaces the templates with a model that is handed the live weather
+facts plus retrieved passages from a small corpus of official safety guidance,
+and must cite the passage every recommendation came from.
+
+The rules did not move. Whether a card appears, which hazard it is about, how
+severe it is, when it is suppressed and when it expires are all still decided by
+the deterministic engine above. Retrieval and generation only choose words —
+and if anything about them fails, the phase-one template writes the card
+instead.
+
+| | |
+| --- | --- |
+| Corpus | 6 registered sources (5 live, 1 deliberately retired), 23 chunks, US federal public domain |
+| Ingestion | content-addressed chunk ids — re-running reproduces the index byte for byte |
+| Retrieval | hybrid BM25 + vector, RRF K=60, hazard/jurisdiction/`enabled` filters applied structurally |
+| Validation | deterministic only — citations must resolve to *this* retrieval, actions come from a closed 19-code vocabulary, numbers must appear in the weather facts or a cited passage |
+| Fallback | every failure path returns a phase-one card |
+| Evals | 53 cases, run in CI; 0 unresolvable citations, 0 hazard leaks, 0 missed fallbacks |
+
+Retrieval is an interface with two implementations: Azure AI Search for
+production, and a local index that runs the same strategy at zero cost — which
+is what makes the retrieval layer executable in CI, and what kept this feature
+buildable while the subscription was disabled. **The Azure path is written and
+its checkable parts are asserted in tests, but it has never talked to a live
+service.**
+
+Full design, evaluation results and limitations: **[docs/rag.md](docs/rag.md)**.
+
 ## Monitoring
 
 Three alert rules, covering three genuinely different failure modes:
@@ -205,10 +235,13 @@ src/functions/                    deployment package — host.json at its root
   weather/                        config · api · models · transform · monitoring
                                   clients · sinks · pipeline · serving
 dashboard/                        three files, no framework, no external requests
-scripts/                          architecture render, dashboard server, sample data, OIDC
-tests/                            185 tests
+knowledge/                        reviewed source registry, raw documents, built index
+evals/                            53 retrieval and generation cases, run as a CI gate
+scripts/                          ingestion, index build, architecture render, sample data, OIDC
+tests/                            326 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
 docs/advice.md                    advice rules, card protocol, phase-two plan
+docs/rag.md                       knowledge base, retrieval, grounding, evaluation
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting
 powerbi/                          report template and connection notes
 ```

@@ -8,6 +8,7 @@ frequency policy or the card API changing at all.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Protocol
 
@@ -27,7 +28,12 @@ class AdviceContentProvider(Protocol):
 
     name: str
 
-    def generate(self, trigger: AdviceTrigger, weather: WeatherContext) -> AdviceContent: ...
+    def generate(
+        self,
+        trigger: AdviceTrigger,
+        weather: WeatherContext,
+        question: str | None = None,
+    ) -> AdviceContent: ...
 
 
 # Deliberately fixed strings rather than anything generative. Phase one has to
@@ -64,7 +70,14 @@ class TemplateAdviceProvider:
     def __init__(self, templates: dict[AdviceTrigger, tuple[str, str]] | None = None) -> None:
         self._templates = templates if templates is not None else TEMPLATES
 
-    def generate(self, trigger: AdviceTrigger, weather: WeatherContext) -> AdviceContent:
+    def generate(
+        self,
+        trigger: AdviceTrigger,
+        weather: WeatherContext,
+        question: str | None = None,
+    ) -> AdviceContent:
+        # A template cannot answer a free-text question, so it ignores it and
+        # answers the hazard. That is the honest degradation.
         title, message = self._templates.get(trigger, FALLBACK)
         if trigger not in self._templates:
             # Reaching the fallback means a rule was added without copy. Worth
@@ -81,16 +94,41 @@ class TemplateAdviceProvider:
         )
 
 
+def _accepts_question(func: object) -> bool:
+    try:
+        signature = inspect.signature(func)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+    if any(p.kind is inspect.Parameter.VAR_POSITIONAL for p in signature.parameters.values()):
+        return True
+    return len(signature.parameters) >= 3
+
+
 def content_for(
     provider: AdviceContentProvider,
     match: RuleMatch,
     weather: WeatherContext,
+    question: str | None = None,
 ) -> AdviceContent:
-    """Generate copy for a match and attach the rule's evidence to it."""
-    content = provider.generate(match.trigger, weather)
+    """Generate copy for a match and attach the rule's evidence to it.
+
+    Phase two widened the provider protocol with an optional `question`. A
+    provider written against the phase-one two-argument signature must keep
+    working untouched, so the extra argument is passed only when the callee
+    actually accepts it. The phase-one test that supplies a two-argument
+    provider is left unchanged on purpose: it is the compatibility check.
+    """
+    if question is not None and _accepts_question(provider.generate):
+        content = provider.generate(match.trigger, weather, question)
+    else:
+        content = provider.generate(match.trigger, weather)
     return AdviceContent(
         title=content.title,
         message=content.message,
+        # The rule's evidence always wins. A generated sentence may not
+        # introduce or alter the figure the card displays.
         evidence=content.evidence or match.evidence,
         generation_method=content.generation_method,
+        sources=content.sources,
+        advice_codes=content.advice_codes,
     )

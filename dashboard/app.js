@@ -40,6 +40,9 @@
     metric: "temp_c",
     timeseries: null,
     adviceId: null,
+    // Remembered so a follow-up question re-queries the same location the
+    // card was built for.
+    adviceLocation: null,
   };
 
   /* ---------------- advice ----------------
@@ -123,6 +126,52 @@
     state.adviceId = null;
   }
 
+  function sourcesHtml(sources) {
+    // A template card has no sources and renders exactly as it did in v1.1;
+    // the citation row only appears when the copy was actually grounded.
+    if (!sources || !sources.length) return "";
+
+    var links = sources
+      .map(function (source) {
+        // rel="noopener noreferrer" because these are third-party links, and
+        // the authority is shown so the reader knows who is being cited before
+        // deciding to follow it.
+        return (
+          '<a class="advice__source" href="' +
+          escapeHtml(source.source_url) +
+          '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(source.authority || source.title) +
+          "</a>"
+        );
+      })
+      .join("");
+
+    return '<p class="advice__sources"><span>依据：</span>' + links + "</p>";
+  }
+
+  function questionBox(card) {
+    var form = document.createElement("form");
+    form.className = "advice__ask";
+    form.innerHTML =
+      '<input class="advice__ask-input" type="text" maxlength="200" ' +
+      'placeholder="想问点什么？例如：中午可以跑步吗" ' +
+      'aria-label="就这条天气建议提问">' +
+      '<button class="advice__ask-button" type="submit">问</button>';
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var input = form.querySelector(".advice__ask-input");
+      var question = (input.value || "").trim();
+      if (!question) return;
+      // The answer replaces this card in place. The question changes only the
+      // wording and the citations; whether a card exists at all, and how
+      // severe it is, was already decided server-side by the rules.
+      input.disabled = true;
+      refreshAdvice(state.adviceLocation, question);
+    });
+    return form;
+  }
+
   function renderAdvice(card) {
     var slot = el("advice-slot");
     var wrapper = document.createElement("div");
@@ -153,6 +202,7 @@
       escapeHtml(card.message) +
       "</p>" +
       (chips ? '<div class="advice__evidence">' + chips + "</div>" : "") +
+      sourcesHtml(card.sources) +
       '<p class="advice__meta">' +
       escapeHtml(card.location) +
       " · 天气数据更新于 " +
@@ -160,6 +210,13 @@
       "</p>" +
       '<div class="advice__actions"></div>' +
       "</div>";
+
+    if (card.sources && card.sources.length) {
+      // Only offered when the card was grounded in retrieved guidance: asking
+      // a template a question would do nothing, and an input that does nothing
+      // is worse than no input.
+      wrapper.querySelector(".advice__body").appendChild(questionBox(card));
+    }
 
     var actions = wrapper.querySelector(".advice__actions");
     (card.actions || []).forEach(function (action) {
@@ -182,17 +239,19 @@
     sendFeedback(card, "shown");
   }
 
-  function refreshAdvice(location) {
+  function refreshAdvice(location, question) {
     if (!ENDPOINTS.advice || !location) return;
+    state.adviceLocation = location;
 
     // The sample file is a plain document with no query interface; the live
-    // endpoint takes the location and session.
+    // endpoint takes the location, the session and an optional question.
     var url = API_BASE
       ? ENDPOINTS.advice +
         "?location=" +
         encodeURIComponent(location) +
         "&session=" +
-        encodeURIComponent(sessionId())
+        encodeURIComponent(sessionId()) +
+        (question ? "&q=" + encodeURIComponent(question) : "")
       : ENDPOINTS.advice;
 
     fetch(url, { cache: "no-store" })
@@ -214,7 +273,7 @@
         }
         // Re-rendering an identical card on every poll is what makes this kind
         // of feature feel like a popup. Same id means leave the DOM alone.
-        if (card.recommendation_id === state.adviceId) return;
+        if (!question && card.recommendation_id === state.adviceId) return;
         if (dismissed().indexOf(card.recommendation_id) !== -1) return;
         if (parseTime(card.expires_at_utc) && parseTime(card.expires_at_utc) < new Date()) return;
         renderAdvice(card);

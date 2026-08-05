@@ -16,6 +16,7 @@ Python worker introspects it to discover functions:
   reports *zero* functions — including every unrelated one in this file.
 """
 
+import hashlib
 import json
 import logging
 from typing import List
@@ -24,6 +25,7 @@ import azure.functions as func
 
 from weather import pipeline, serving
 from weather.advice import AdviceService, InvalidLocation, new_session_id
+from weather.advice import factory as advice_factory
 from weather.config import ConfigError, get_settings
 
 app = func.FunctionApp()
@@ -144,6 +146,10 @@ def api_breaches(req: func.HttpRequest) -> func.HttpResponse:
 
 SESSION_HEADER = "X-Advice-Session"
 
+# A question is a retrieval hint, not an input channel. Bounding it keeps
+# prompt size predictable and leaves no room for pasted instructions.
+MAX_QUESTION_CHARS = 200
+
 
 def _session_id(req: func.HttpRequest) -> str:
     """An anonymous id the client keeps for its browser session.
@@ -166,10 +172,21 @@ def api_advice(req: func.HttpRequest) -> func.HttpResponse:
     Every failure mode here degrades to "no card". The dashboard asks for
     advice *after* it has already rendered the weather, and nothing in this
     handler is allowed to make that page worse.
+
+    `q` is an optional free-text question. It only ever influences wording and
+    which passages are retrieved — never whether a card appears, which trigger
+    fires, or how severe it is. Those stay with the rule engine, so a question
+    cannot talk the system into downplaying a hazard.
     """
     location = (req.params.get("location") or "").strip()
     if not location:
         return _json_response({"error": "location is required"}, 400)
+
+    question = (req.params.get("q") or "").strip()
+    if len(question) > MAX_QUESTION_CHARS:
+        return _json_response(
+            {"error": f"q must be at most {MAX_QUESTION_CHARS} characters"}, 400
+        )
 
     session_id = _session_id(req)
     try:
@@ -181,7 +198,9 @@ def api_advice(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
 
     try:
-        result = AdviceService().build(snapshot, location, session_id)
+        result = AdviceService(provider=advice_factory.get_provider()).build(
+            snapshot, location, session_id, question=question or None
+        )
     except InvalidLocation:
         return _json_response(
             {"error": f"unknown location '{location}'"}, 400
@@ -200,9 +219,14 @@ def api_advice(req: func.HttpRequest) -> func.HttpResponse:
     response = _json_response(card)
     response.headers[SESSION_HEADER] = session_id
     # Cacheable, but never past the card's own expiry, and never across a new
-    # snapshot: the recommendation id changes when the observation does.
+    # snapshot: the recommendation id changes when the observation does. The
+    # question is folded in because two questions against the same snapshot
+    # produce the same recommendation id but different copy.
     response.headers["Cache-Control"] = "private, max-age=60"
-    response.headers["ETag"] = f'"{card["recommendation_id"]}"'
+    etag_seed = card["recommendation_id"]
+    if question:
+        etag_seed += ":" + hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
+    response.headers["ETag"] = f'"{etag_seed}"'
     return response
 
 
