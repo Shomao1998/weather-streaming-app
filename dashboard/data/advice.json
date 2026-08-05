@@ -1,0 +1,32 @@
+{
+  "card": {
+    "recommendation_id": "743957279d4098a20c63cb881ba6c5d7",
+    "location": "Tokyo",
+    "trigger_code": "RAIN_EXPECTED",
+    "severity": "info",
+    "title": "一小时内可能下雨",
+    "message": "未来一小时降水概率较高，出门记得带伞哦。",
+    "evidence": [
+      {
+        "label": "降水概率",
+        "value": "85%"
+      }
+    ],
+    "weather_observed_at_utc": "2026-08-05T05:44:00Z",
+    "generated_at_utc": "2026-08-05T05:44:45.252778Z",
+    "expires_at_utc": "2026-08-05T06:44:45.252778Z",
+    "generation_method": "template-v1",
+    "weather_snapshot_id": "9e124f7b1b73896f",
+    "rule_version": "2026-08-04",
+    "actions": [
+      {
+        "type": "dismiss",
+        "label": "知道了"
+      },
+      {
+        "type": "mute",
+        "label": "今天不再提醒"
+      }
+    ]
+  }
+}

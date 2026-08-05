@@ -125,6 +125,36 @@ until the app does. Creating the identity first and granting its roles up front 
 problem — and as a side effect there is no connection string or account key anywhere in the
 configuration. Event Hubs, Storage and Key Vault are all reached by identity.
 
+## Advice cards
+
+The dashboard shows one short, actionable suggestion when the weather warrants
+it — "take an umbrella", "drink water" — with the reading it was derived from.
+
+Phase one is deterministic: rules and templates, **no model and no retrieval**.
+Every sentence the system can emit is a fixed string, so the same weather always
+produces the same words and the card can be asserted exactly in a test.
+`providers.AdviceContentProvider` is the seam a retrieval-backed generator slots
+into later without the rules, the frequency policy or the card protocol
+changing.
+
+| Trigger | Fires when | Priority |
+| --- | --- | --- |
+| `EXTREME_HEAT` | `temp_c >= 35` | 1 |
+| `HIGH_WIND` | `wind_kph >= 40` | 2 |
+| `HIGH_UV` | `uv >= 8` | 3 |
+| `RAIN_EXPECTED` | next hour `chance_of_rain >= 80` | 4 |
+
+Advice is strictly secondary: it is requested only after the weather has
+rendered, and every failure — stale data, a suppressed card, a broken provider,
+an unreachable API — resolves to showing nothing rather than to a worse page.
+
+Deduplication is a consequence of determinism: the recommendation id is
+`hash(location + trigger + weather_snapshot_id + rule_version)`, so the same
+advice about the same observation is literally the same card. A rising risk
+level overrides both the frequency window and a mute.
+
+Full design, API contract and the phase-two plan: **[docs/advice.md](docs/advice.md)**.
+
 ## Monitoring
 
 Three alert rules, covering three genuinely different failure modes:
@@ -148,8 +178,9 @@ src/functions/                    deployment package — host.json at its root
                                   clients · sinks · pipeline · serving
 dashboard/                        three files, no framework, no external requests
 scripts/                          architecture render, dashboard server, sample data, OIDC
-tests/                            92 tests
+tests/                            185 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
+docs/advice.md                    advice rules, card protocol, phase-two plan
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting
 powerbi/                          report template and connection notes
 ```

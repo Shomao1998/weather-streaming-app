@@ -185,3 +185,59 @@ class TestServingPayloads:
         assert len(result) == 100
         assert result[0]["record_id"] == "b119"
         assert result[-1]["record_id"] == "b20"
+
+
+class TestNextHourRain:
+    """The serving layer joins the hourly forecast onto each location.
+
+    `build_serving_payloads` reads the wall clock to decide what "upcoming"
+    means, so these fixtures are built relative to now rather than to a frozen
+    date — otherwise every hour would already be in the past.
+    """
+
+    def _hourly(self, *offsets_and_chances):
+        now = datetime.now(UTC)
+        return [
+            {
+                "location_key": "35.6895,139.6917",
+                "time_utc": (now + timedelta(hours=offset))
+                .replace(minute=0, second=0, microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "chance_of_rain": chance,
+            }
+            for offset, chance in offsets_and_chances
+        ]
+
+    def test_picks_the_nearest_upcoming_hour(self, current_payload):
+        rows = [transform.to_current_record(current_payload).to_dict()]
+        payloads = pipeline.build_serving_payloads(
+            rows, [], self._hourly((1, 85), (3, 10))
+        )
+        location = payloads[pipeline.SERVING_LATEST_BLOB]["locations"][0]
+        assert location["precip_chance_next_hour"] == 85
+
+    def test_ignores_hours_beyond_the_look_ahead(self, current_payload):
+        rows = [transform.to_current_record(current_payload).to_dict()]
+        payloads = pipeline.build_serving_payloads(rows, [], self._hourly((9, 95)))
+        location = payloads[pipeline.SERVING_LATEST_BLOB]["locations"][0]
+        # Tomorrow's rain must never answer "should I take an umbrella now".
+        assert location["precip_chance_next_hour"] is None
+
+    def test_ignores_hours_already_past(self, current_payload):
+        rows = [transform.to_current_record(current_payload).to_dict()]
+        payloads = pipeline.build_serving_payloads(rows, [], self._hourly((-3, 95)))
+        assert (
+            payloads[pipeline.SERVING_LATEST_BLOB]["locations"][0][
+                "precip_chance_next_hour"
+            ]
+            is None
+        )
+
+    def test_absent_hourly_data_is_null_not_zero(self, current_payload):
+        rows = [transform.to_current_record(current_payload).to_dict()]
+        payloads = pipeline.build_serving_payloads(rows, [])
+        location = payloads[pipeline.SERVING_LATEST_BLOB]["locations"][0]
+        # Null means "unknown"; zero would mean "definitely dry", and the rule
+        # treats those very differently.
+        assert location["precip_chance_next_hour"] is None

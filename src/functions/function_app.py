@@ -23,6 +23,7 @@ from typing import List
 import azure.functions as func
 
 from weather import pipeline, serving
+from weather.advice import AdviceService, InvalidLocation, new_session_id
 from weather.config import ConfigError, get_settings
 
 app = func.FunctionApp()
@@ -139,6 +140,97 @@ def api_timeseries(req: func.HttpRequest) -> func.HttpResponse:
 def api_breaches(req: func.HttpRequest) -> func.HttpResponse:
     """Recent threshold breaches, newest first."""
     return _serve(pipeline.SERVING_BREACHES_BLOB)
+
+
+SESSION_HEADER = "X-Advice-Session"
+
+
+def _session_id(req: func.HttpRequest) -> str:
+    """An anonymous id the client keeps for its browser session.
+
+    Generated server-side when absent so a first-time caller still gets
+    consistent frequency control; nothing else about the caller is recorded.
+    """
+    return (
+        req.headers.get(SESSION_HEADER)
+        or req.params.get("session")
+        or new_session_id()
+    )
+
+
+@app.function_name(name="api_advice")
+@app.route(route="api/advice", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_advice(req: func.HttpRequest) -> func.HttpResponse:
+    """At most one advice card for a location, or 204 when there is nothing to say.
+
+    Every failure mode here degrades to "no card". The dashboard asks for
+    advice *after* it has already rendered the weather, and nothing in this
+    handler is allowed to make that page worse.
+    """
+    location = (req.params.get("location") or "").strip()
+    if not location:
+        return _json_response({"error": "location is required"}, 400)
+
+    session_id = _session_id(req)
+    try:
+        snapshot = serving.read_serving_document(pipeline.SERVING_LATEST_BLOB)
+    except serving.ServingDataUnavailable:
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+    except Exception:
+        logger.exception("Advice: could not read the weather snapshot.")
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+
+    try:
+        result = AdviceService().build(snapshot, location, session_id)
+    except InvalidLocation:
+        return _json_response(
+            {"error": f"unknown location '{location}'"}, 400
+        )
+    except Exception:
+        logger.exception("Advice: evaluation failed.")
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+
+    if not result.has_card:
+        return func.HttpResponse(
+            status_code=204,
+            headers={SESSION_HEADER: session_id, "X-Advice-Outcome": str(result.outcome)},
+        )
+
+    card = result.card.to_dict()
+    response = _json_response(card)
+    response.headers[SESSION_HEADER] = session_id
+    # Cacheable, but never past the card's own expiry, and never across a new
+    # snapshot: the recommendation id changes when the observation does.
+    response.headers["Cache-Control"] = "private, max-age=60"
+    response.headers["ETag"] = f'"{card["recommendation_id"]}"'
+    return response
+
+
+@app.function_name(name="api_advice_feedback")
+@app.route(
+    route="api/advice/feedback", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS
+)
+def api_advice_feedback(req: func.HttpRequest) -> func.HttpResponse:
+    """Record one interaction with a card. Mutes are the only event that
+    changes future behaviour; the rest exist to measure whether this feature
+    is worth keeping."""
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return _json_response({"error": "body must be JSON"}, 400)
+    if not isinstance(payload, dict):
+        return _json_response({"error": "body must be a JSON object"}, 400)
+
+    payload.setdefault("session_id", _session_id(req))
+    try:
+        AdviceService().record_feedback(payload)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except Exception:
+        logger.exception("Advice: feedback could not be recorded.")
+        return func.HttpResponse(status_code=202)
+
+    return func.HttpResponse(status_code=202)
 
 
 @app.function_name(name="health")

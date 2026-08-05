@@ -24,6 +24,8 @@ EXPECTED = {
     "api_latest": "httpTrigger",
     "api_timeseries": "httpTrigger",
     "api_breaches": "httpTrigger",
+    "api_advice": "httpTrigger",
+    "api_advice_feedback": "httpTrigger",
     "health": "httpTrigger",
 }
 

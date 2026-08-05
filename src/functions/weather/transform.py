@@ -7,7 +7,7 @@ no Azure SDK. That is what makes this layer testable against saved fixtures.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from .models import (
@@ -15,6 +15,7 @@ from .models import (
     AlertRecord,
     CurrentWeatherRecord,
     ForecastDayRecord,
+    ForecastHourRecord,
     Location,
     _epoch_to_utc,
     _iso,
@@ -168,6 +169,55 @@ def to_forecast_records(
                 condition_text=_as_str(condition.get("text")),
             )
         )
+    return records
+
+
+def to_forecast_hour_records(
+    payload: dict[str, Any],
+    *,
+    ingested_at: datetime | None = None,
+    hours_ahead: int = 6,
+) -> list[ForecastHourRecord]:
+    """Forecast hours within the look-ahead window, one record each.
+
+    The daily forecast cannot answer "is it about to rain", so the hourly
+    breakdown the same response already contains is kept as its own record
+    type — but only the next few hours of it. The response holds every hour of
+    every requested day; keeping all of them would quadruple ingest volume to
+    serve a rule that never looks past the next hour.
+    """
+    location = parse_location(payload)
+    now = ingested_at or utcnow()
+    ingested = _iso(now)
+    horizon = now + timedelta(hours=hours_ahead)
+    records: list[ForecastHourRecord] = []
+
+    for day in _list(payload, "forecast", "forecastday"):
+        if not isinstance(day, dict):
+            continue
+        for entry in day.get("hour") or []:
+            if not isinstance(entry, dict):
+                continue
+            moment = _epoch_to_utc(_as_int(entry.get("time_epoch")))
+            floor = now.replace(minute=0, second=0, microsecond=0)
+            if moment is None or moment < floor or moment > horizon:
+                continue
+            time_utc = _iso(moment)
+            condition = _dict(entry, "condition")
+            records.append(
+                ForecastHourRecord(
+                    record_id=make_record_id("forecast_hour", location.key, time_utc),
+                    location_key=location.key,
+                    location=location,
+                    time_utc=time_utc,
+                    ingested_at_utc=ingested,
+                    temp_c=_as_float(entry.get("temp_c")),
+                    precip_mm=_as_float(entry.get("precip_mm")),
+                    chance_of_rain=_as_int(entry.get("chance_of_rain")),
+                    wind_kph=_as_float(entry.get("wind_kph")),
+                    condition_text=_as_str(condition.get("text")),
+                )
+            )
     return records
 
 

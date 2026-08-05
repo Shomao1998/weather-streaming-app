@@ -24,6 +24,9 @@ SERVING_LATEST_BLOB = "latest.json"
 SERVING_TIMESERIES_BLOB = "timeseries_24h.json"
 SERVING_BREACHES_BLOB = "breaches_24h.json"
 
+# How far ahead an hourly forecast may be and still count as "the next hour".
+HOURLY_LOOKAHEAD_HOURS = 2
+
 
 @dataclass
 class IngestResult:
@@ -108,6 +111,11 @@ def ingest_forecast(settings: Settings | None = None) -> IngestResult:
             result.failed_locations.append(location)
             continue
         records.extend(transform.to_forecast_records(payload))
+        records.extend(
+            transform.to_forecast_hour_records(
+                payload, hours_ahead=settings.weather.forecast_hours_ahead
+            )
+        )
         records.extend(transform.to_alert_records(payload))
 
     result.records_collected = len(records)
@@ -192,9 +200,41 @@ def _flatten_row(row: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
+def _next_hour_rain(
+    hourly_rows: Sequence[dict[str, Any]],
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Per location, the nearest upcoming hourly forecast.
+
+    "Nearest upcoming" rather than "any hour": a rain probability from
+    tomorrow afternoon must never end up answering "should I take an umbrella
+    now". Anything further out than the look-ahead window is discarded.
+    """
+    now = now or datetime.now(UTC)
+    horizon = now + timedelta(hours=HOURLY_LOOKAHEAD_HOURS)
+    best: dict[str, dict[str, Any]] = {}
+
+    for row in hourly_rows:
+        stamp = row.get("time_utc")
+        if not stamp:
+            continue
+        try:
+            moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if moment < now or moment > horizon:
+            continue
+        key = row.get("location_key", "")
+        current = best.get(key)
+        if current is None or moment < current["_moment"]:
+            best[key] = {**row, "_moment": moment}
+    return best
+
+
 def build_serving_payloads(
     current_rows: Sequence[dict[str, Any]],
     breach_rows: Sequence[dict[str, Any]],
+    hourly_rows: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Shape the small JSON files the public dashboard reads.
 
@@ -203,6 +243,7 @@ def build_serving_payloads(
     """
     flat = [_flatten_row(row) for row in _dedupe_rows(current_rows)]
     generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    upcoming = _next_hour_rain(hourly_rows)
 
     by_location: dict[str, list[dict[str, Any]]] = {}
     for row in flat:
@@ -227,6 +268,11 @@ def build_serving_payloads(
                 "uv": rows[-1].get("uv"),
                 "pm2_5": rows[-1].get("aqi_pm2_5"),
                 "us_epa_index": rows[-1].get("aqi_us_epa_index"),
+                # Feeds the advice engine's rain rule. Absent when no hourly
+                # forecast covers the look-ahead window, which the rule treats
+                # as "unknown" rather than "no rain".
+                "precip_chance_next_hour": (upcoming.get(key) or {}).get("chance_of_rain"),
+                "precip_forecast_hour_utc": (upcoming.get(key) or {}).get("time_utc"),
                 "observation_count_24h": len(rows),
             }
             for key, rows in sorted(by_location.items())
@@ -318,8 +364,9 @@ def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
 
     current_rows = read_bronze("current", hours=hours, settings=settings)
     breach_rows = read_bronze("threshold_breach", hours=hours, settings=settings)
+    hourly_rows = read_bronze("forecast_hour", hours=hours, settings=settings)
 
-    payloads = build_serving_payloads(current_rows, breach_rows)
+    payloads = build_serving_payloads(current_rows, breach_rows, hourly_rows)
     blob_service = clients.get_blob_service(settings)
     for path, payload in payloads.items():
         sinks.write_json_blob(
@@ -330,6 +377,7 @@ def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
     summary = {
         "bronze_current_rows": len(current_rows),
         "bronze_breach_rows": len(breach_rows),
+        "bronze_hourly_rows": len(hourly_rows),
         "serving_files": list(payloads),
         "silver_path": silver_path,
     }

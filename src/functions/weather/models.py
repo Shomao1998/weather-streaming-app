@@ -140,6 +140,33 @@ class ForecastDayRecord:
 
 
 @dataclass(frozen=True)
+class ForecastHourRecord:
+    """One hour of the forecast for one location.
+
+    Added for the advice engine: a "will it rain in the next hour" rule needs
+    hourly precipitation probability, and the daily forecast only carries
+    `daily_chance_of_rain`, which answers a different question.
+    """
+
+    record_id: str
+    location_key: str
+    location: Location
+    time_utc: str | None
+    ingested_at_utc: str
+    temp_c: float | None = None
+    precip_mm: float | None = None
+    chance_of_rain: int | None = None
+    wind_kph: float | None = None
+    condition_text: str | None = None
+    schema_version: str = SCHEMA_VERSION
+    source: str = SOURCE_NAME
+    record_type: str = "forecast_hour"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class AlertRecord:
     record_id: str
     location_key: str

@@ -16,11 +16,15 @@
         latest: API_BASE + "/api/latest",
         timeseries: API_BASE + "/api/timeseries",
         breaches: API_BASE + "/api/breaches",
+        advice: API_BASE + "/api/advice",
+        feedback: API_BASE + "/api/advice/feedback",
       }
     : {
         latest: "./data/latest.json",
         timeseries: "./data/timeseries_24h.json",
         breaches: "./data/breaches_24h.json",
+        advice: "./data/advice.json",
+        feedback: null,
       };
 
   var SERIES_COLORS = ["--s1", "--s2", "--s3", "--s4", "--s5"];
@@ -35,7 +39,190 @@
   var state = {
     metric: "temp_c",
     timeseries: null,
+    adviceId: null,
   };
+
+  /* ---------------- advice ----------------
+     A strictly secondary feature: it is requested only after the weather has
+     rendered, every failure is swallowed, and nothing here can throw into the
+     weather refresh path. */
+
+  var SESSION_KEY = "weather-advice-session";
+  var DISMISSED_KEY = "weather-advice-dismissed";
+
+  function sessionId() {
+    try {
+      var existing = localStorage.getItem(SESSION_KEY);
+      if (existing) return existing;
+      var fresh =
+        (window.crypto && window.crypto.randomUUID && window.crypto.randomUUID()) ||
+        String(Date.now()) + Math.random().toString(16).slice(2);
+      localStorage.setItem(SESSION_KEY, fresh);
+      return fresh;
+    } catch (e) {
+      // Private browsing blocks storage; a per-load id still works, it just
+      // forgets frequency state between reloads.
+      return String(Date.now());
+    }
+  }
+
+  function dismissed() {
+    try {
+      return JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || "[]");
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function rememberDismissed(id) {
+    try {
+      var all = dismissed();
+      all.push(id);
+      sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(all.slice(-20)));
+    } catch (e) {
+      /* nothing to do */
+    }
+  }
+
+  function sendFeedback(card, event) {
+    if (!ENDPOINTS.feedback) return;
+    var body = JSON.stringify({
+      event: event,
+      session_id: sessionId(),
+      recommendation_id: card.recommendation_id,
+      trigger_code: card.trigger_code,
+      location: card.location,
+      weather_snapshot_id: card.weather_snapshot_id,
+      generation_method: card.generation_method,
+    });
+    try {
+      // text/plain keeps this a CORS-simple request, so telemetry never costs
+      // a preflight round trip. The API parses the body regardless.
+      fetch(ENDPOINTS.feedback, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        body: body,
+        keepalive: true,
+      }).catch(function () {});
+    } catch (e) {
+      /* feedback is best-effort by design */
+    }
+  }
+
+  var TRIGGER_ICONS = {
+    RAIN_EXPECTED: "\u2602",
+    HIGH_UV: "\u2600",
+    EXTREME_HEAT: "\ud83c\udf21",
+    HIGH_WIND: "\ud83c\udf2c",
+  };
+
+  function clearAdvice() {
+    var slot = el("advice-slot");
+    slot.innerHTML = "";
+    slot.hidden = true;
+    state.adviceId = null;
+  }
+
+  function renderAdvice(card) {
+    var slot = el("advice-slot");
+    var wrapper = document.createElement("div");
+    wrapper.className = "advice";
+    wrapper.setAttribute("data-severity", card.severity || "info");
+
+    var chips = (card.evidence || [])
+      .map(function (item) {
+        return (
+          '<span class="advice__chip">' +
+          escapeHtml(item.label) +
+          " " +
+          escapeHtml(item.value) +
+          "</span>"
+        );
+      })
+      .join("");
+
+    wrapper.innerHTML =
+      '<div class="advice__icon">' +
+      (TRIGGER_ICONS[card.trigger_code] || "\u2139") +
+      "</div>" +
+      '<div class="advice__body">' +
+      '<p class="advice__title">' +
+      escapeHtml(card.title) +
+      "</p>" +
+      '<p class="advice__message">' +
+      escapeHtml(card.message) +
+      "</p>" +
+      (chips ? '<div class="advice__evidence">' + chips + "</div>" : "") +
+      '<p class="advice__meta">' +
+      escapeHtml(card.location) +
+      " · 天气数据更新于 " +
+      escapeHtml(timeAgoZh(card.weather_observed_at_utc)) +
+      "</p>" +
+      '<div class="advice__actions"></div>' +
+      "</div>";
+
+    var actions = wrapper.querySelector(".advice__actions");
+    (card.actions || []).forEach(function (action) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "advice__button";
+      button.textContent = action.label;
+      button.addEventListener("click", function () {
+        rememberDismissed(card.recommendation_id);
+        sendFeedback(card, action.type === "mute" ? "muted" : "dismissed");
+        clearAdvice();
+      });
+      actions.appendChild(button);
+    });
+
+    slot.innerHTML = "";
+    slot.appendChild(wrapper);
+    slot.hidden = false;
+    state.adviceId = card.recommendation_id;
+    sendFeedback(card, "shown");
+  }
+
+  function refreshAdvice(location) {
+    if (!ENDPOINTS.advice || !location) return;
+
+    // The sample file is a plain document with no query interface; the live
+    // endpoint takes the location and session.
+    var url = API_BASE
+      ? ENDPOINTS.advice +
+        "?location=" +
+        encodeURIComponent(location) +
+        "&session=" +
+        encodeURIComponent(sessionId())
+      : ENDPOINTS.advice;
+
+    fetch(url, { cache: "no-store" })
+      .then(function (response) {
+        if (response.status === 204) {
+          clearAdvice();
+          return null;
+        }
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then(function (payload) {
+        if (!payload) return;
+        // Offline the document wraps the card so "no advice" is representable.
+        var card = payload.card !== undefined ? payload.card : payload;
+        if (!card) {
+          clearAdvice();
+          return;
+        }
+        // Re-rendering an identical card on every poll is what makes this kind
+        // of feature feel like a popup. Same id means leave the DOM alone.
+        if (card.recommendation_id === state.adviceId) return;
+        if (dismissed().indexOf(card.recommendation_id) !== -1) return;
+        if (parseTime(card.expires_at_utc) && parseTime(card.expires_at_utc) < new Date()) return;
+        renderAdvice(card);
+      })
+      .catch(function () {
+        // Advice is optional; the weather page has already rendered.
+      });
+  }
 
   /* ---------------- helpers ---------------- */
 
@@ -69,6 +256,20 @@
     var hours = Math.round(minutes / 60);
     if (hours < 36) return hours + "h ago";
     return Math.round(hours / 24) + "d ago";
+  }
+
+  // The advice card is written in Chinese, so its metadata is too — mixing
+  // "更新于" with "82s ago" in one line reads as a bug.
+  function timeAgoZh(value) {
+    var d = parseTime(value);
+    if (!d) return "未知";
+    var seconds = Math.round((Date.now() - d.getTime()) / 1000);
+    if (seconds < 90) return Math.max(seconds, 0) + " 秒前";
+    var minutes = Math.round(seconds / 60);
+    if (minutes < 90) return minutes + " 分钟前";
+    var hours = Math.round(minutes / 60);
+    if (hours < 36) return hours + " 小时前";
+    return Math.round(hours / 24) + " 天前";
   }
 
   function clockTime(value) {
@@ -429,6 +630,13 @@
 
       el("footer-meta").textContent =
         "Last refreshed " + new Date().toLocaleTimeString() + (API_BASE ? "" : " · sample data");
+
+      // Deliberately last: the weather is on screen before advice is even
+      // requested, so a slow or broken advice service cannot delay it.
+      if (!latest.__error) {
+        var first = (latest.locations || [])[0];
+        if (first) refreshAdvice(first.name || first.location_key);
+      }
     });
   }
 

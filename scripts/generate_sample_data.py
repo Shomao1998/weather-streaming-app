@@ -22,7 +22,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src" / "functions"))
 
 from weather import monitoring, pipeline, transform  # noqa: E402
-from weather.config import MonitoringSettings  # noqa: E402
+from weather.advice import AdviceService  # noqa: E402
+from weather.advice.repository import InMemoryAdviceRepository  # noqa: E402
+from weather.config import MonitoringSettings, Settings  # noqa: E402
+from weather.models import ForecastHourRecord, Location, make_record_id  # noqa: E402
 
 OUTPUT_DIR = REPO_ROOT / "dashboard" / "data"
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "current_tokyo.json"
@@ -36,6 +39,40 @@ CITIES = [
 # The upstream API refreshes roughly every 15 minutes.
 OBSERVATION_INTERVAL_MINUTES = 15
 HOURS = 24
+
+
+def build_hourly(now: datetime) -> list[dict]:
+    """An hourly forecast for the look-ahead window, one entry per city.
+
+    The advice engine's rain rule reads this; without it the sample dashboard
+    would show a card the deployed one never could.
+    """
+    random.seed(4711)
+    rows: list[dict] = []
+    for index, city in enumerate(CITIES):
+        location = Location(name=city["name"], region=city["region"],
+                            lat=city["lat"], lon=city["lon"])
+        for hour in range(6):
+            moment = (now + timedelta(hours=hour)).replace(minute=0, second=0, microsecond=0)
+            # Hour 0 is the current hour, which the serving layer skips as
+            # already past — so the visible card has to come from hour 1.
+            chance = 85 if (index == 0 and hour == 1) else random.randint(0, 45)
+            stamp = moment.isoformat().replace("+00:00", "Z")
+            rows.append(
+                ForecastHourRecord(
+                    record_id=make_record_id("forecast_hour", location.key, stamp),
+                    location_key=location.key,
+                    location=location,
+                    time_utc=stamp,
+                    ingested_at_utc=now.isoformat().replace("+00:00", "Z"),
+                    temp_c=round(city["base_temp"] + random.uniform(-2, 2), 1),
+                    precip_mm=round(chance / 100 * 3, 1),
+                    chance_of_rain=chance,
+                    wind_kph=round(random.uniform(5, 25), 1),
+                    condition_text="Patchy rain nearby" if chance >= 50 else "Sunny",
+                ).to_dict()
+            )
+    return rows
 
 
 def build_rows() -> tuple[list[dict], list[dict]]:
@@ -96,7 +133,23 @@ def build_rows() -> tuple[list[dict], list[dict]]:
 
 def main() -> int:
     current_rows, breach_rows = build_rows()
-    payloads = pipeline.build_serving_payloads(current_rows, breach_rows)
+    hourly_rows = build_hourly(datetime.now(UTC))
+    payloads = pipeline.build_serving_payloads(current_rows, breach_rows, hourly_rows)
+
+    # Run the real advice service over the sample snapshot, so the offline
+    # dashboard shows exactly the card the deployed one would.
+    service = AdviceService(settings=Settings(), repository=InMemoryAdviceRepository())
+    advice = {"card": None}
+    for entry in payloads[pipeline.SERVING_LATEST_BLOB]["locations"]:
+        result = service.build(
+            payloads[pipeline.SERVING_LATEST_BLOB],
+            entry["name"],
+            "sample-session",
+        )
+        if result.has_card:
+            advice = {"card": result.card.to_dict()}
+            break
+    payloads["advice.json"] = advice
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for name, payload in payloads.items():
@@ -106,7 +159,7 @@ def main() -> int:
 
     print(
         f"\n{len(current_rows)} observations across {len(CITIES)} cities, "
-        f"{len(breach_rows)} threshold breaches"
+        f"{len(breach_rows)} threshold breaches, {len(hourly_rows)} forecast hours"
     )
     return 0
 
