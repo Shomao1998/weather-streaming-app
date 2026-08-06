@@ -172,7 +172,7 @@ on the namespace.
 **The dashboard shows "Unreachable".** CORS or a wrong `apiBase`. `dashboard/config.js` is rewritten
 by the deploy workflow; if you deployed the dashboard by hand, it still points at the sample data.
 
-## Enabling retrieval-grounded advice (v2)
+## Enabling retrieval-grounded advice (v1.2)
 
 Optional, and off by default. With `RAG_ENABLED` unset the advice card behaves
 exactly as it did in v1.1 — the deployment steps above need no changes.

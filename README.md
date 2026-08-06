@@ -158,7 +158,7 @@ configuration. Event Hubs, Storage and Key Vault are all reached by identity.
 The dashboard shows one short, actionable suggestion when the weather warrants
 it — "take an umbrella", "drink water" — with the reading it was derived from.
 
-Phase one is deterministic: rules and templates, **no model and no retrieval**.
+v1.1 is deterministic: rules and templates, **no model and no retrieval**.
 Every sentence the system can emit is a fixed string, so the same weather always
 produces the same words and the card can be asserted exactly in a test.
 `providers.AdviceContentProvider` is the seam a retrieval-backed generator slots
@@ -181,18 +181,18 @@ Deduplication is a consequence of determinism: the recommendation id is
 advice about the same observation is literally the same card. A rising risk
 level overrides both the frequency window and a mute.
 
-Full design, API contract and the phase-two plan: **[docs/advice.md](docs/advice.md)**.
+Full design and API contract: **[docs/advice.md](docs/advice.md)**.
 
-### v2 — grounded in official guidance
+### v1.2 — grounded in official guidance
 
-Phase two replaces the templates with a model that is handed the live weather
+v1.2 replaces the templates with a model that is handed the live weather
 facts plus retrieved passages from a small corpus of official safety guidance,
 and must cite the passage every recommendation came from.
 
 The rules did not move. Whether a card appears, which hazard it is about, how
 severe it is, when it is suppressed and when it expires are all still decided by
 the deterministic engine above. Retrieval and generation only choose words —
-and if anything about them fails, the phase-one template writes the card
+and if anything about them fails, the v1.1 template writes the card
 instead.
 
 | | |
@@ -201,7 +201,7 @@ instead.
 | Ingestion | content-addressed chunk ids — re-running reproduces the index byte for byte |
 | Retrieval | hybrid BM25 + vector, RRF K=60, hazard/jurisdiction/`enabled` filters applied structurally |
 | Validation | deterministic only — citations must resolve to *this* retrieval, actions come from a closed 19-code vocabulary, numbers must appear in the weather facts or a cited passage |
-| Fallback | every failure path returns a phase-one card |
+| Fallback | every failure path returns a v1.1 card |
 | Evals | 53 cases, run in CI; 0 unresolvable citations, 0 hazard leaks, 0 missed fallbacks |
 
 Retrieval is an interface with two implementations: Azure AI Search for
@@ -240,7 +240,7 @@ evals/                            53 retrieval and generation cases, run as a CI
 scripts/                          ingestion, index build, architecture render, sample data, OIDC
 tests/                            326 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
-docs/advice.md                    advice rules, card protocol, phase-two plan
+docs/advice.md                    advice rules, card protocol (v1.1)
 docs/rag.md                       knowledge base, retrieval, grounding, evaluation
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting
 powerbi/                          report template and connection notes

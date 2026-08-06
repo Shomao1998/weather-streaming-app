@@ -1,6 +1,6 @@
-# Retrieval-grounded advice (v2)
+# Retrieval-grounded advice (v1.2)
 
-Phase one wrote advice from templates. Phase two writes it from a language
+v1.1 wrote advice from templates. v1.2 writes it from a language
 model that has been handed live weather facts and a small corpus of official
 safety guidance, and must cite the passage every recommendation came from.
 
@@ -8,7 +8,11 @@ safety guidance, and must cite the passage every recommendation came from.
 decides whether a card appears, which hazard it is about, how severe it is,
 when it is suppressed and when it expires. Retrieval and generation sit
 strictly downstream of all of that. They choose words. If they fail — in any
-way, for any reason — the phase-one template produces the card instead.
+way, for any reason — the v1.1 template produces the card instead.
+
+> The code calls these two states *phase one* and *phase two*, because that
+> is the vocabulary the seam was designed with before either had a version
+> number. They are v1.1 and v1.2.
 
 ```
                     ┌──────────────── deterministic ────────────────┐
@@ -166,7 +170,7 @@ template is cheaper and safer.
 **Fallback is total.** Retrieval failure, retrieval timeout, too few passages,
 model timeout, model error, unparseable output, failed validation, a fabricated
 citation, an abstention, RAG disabled, no deployment configured — every one of
-them returns a phase-one template card. A high-severity card never depends on
+them returns a v1.1 template card. A high-severity card never depends on
 the model being available.
 
 ---
@@ -267,7 +271,7 @@ reaching a card, 0 missed fallbacks.
 ## 8. Configuration
 
 Every setting defaults to off. An unconfigured deployment behaves exactly like
-phase one.
+v1.1.
 
 | App Setting | Default | Purpose |
 |---|---|---|
@@ -299,8 +303,8 @@ GET /api/advice?location=Tokyo&q=中午可以跑步吗
 `q` is optional, at most 200 characters, and influences **only** wording and
 which passages are retrieved. It cannot change whether a card appears, which
 trigger fired, or how severe it is — those were decided before the question was
-read. A grounded card carries two additional fields; a phase-one client reading
-a phase-two card sees every field it knew about, unchanged:
+read. A grounded card carries two additional fields; a v1.1 client reading a
+v1.2 card sees every field it knew about, unchanged:
 
 ```json
 {

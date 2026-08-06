@@ -148,6 +148,11 @@ stops rendering them past it.
 
 ## Phase two: adding retrieval
 
+> **Delivered in v1.2.** This section is the plan as written during v1.1,
+> kept because the prediction below is what the seam was designed against
+> and it is worth being able to check it against what shipped. The built
+> thing is documented in **[rag.md](rag.md)**.
+
 Implement the protocol and pass it in. Nothing else changes:
 
 ```python
@@ -176,6 +181,12 @@ What is already in place for it:
 What phase two still has to decide: where the corpus lives, whether generation
 happens per request or is precomputed per `(trigger, location)`, and how output
 is validated before it is shown.
+
+How v1.2 answered those three: a reviewed corpus in `knowledge/`, built into a
+JSON index that the runtime reads; generation per request, cached on the
+weather snapshot id so a poll loop does not re-pay for it; and validation by
+deterministic code that resolves every citation against the passages retrieved
+in that same request.
 
 ## API
 
