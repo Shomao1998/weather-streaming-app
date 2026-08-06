@@ -7,10 +7,32 @@
 
 | | |
 | --- | --- |
-| **在线看板** | https://lively-pond-063e00c0f.7.azurestaticapps.net |
-| **健康探针** | https://func-weather-e5lpvy.azurewebsites.net/health |
-| **在线 API** | [`/api/latest`](https://func-weather-e5lpvy.azurewebsites.net/api/latest) · [`/api/timeseries`](https://func-weather-e5lpvy.azurewebsites.net/api/timeseries) · [`/api/breaches`](https://func-weather-e5lpvy.azurewebsites.net/api/breaches) |
 | **技术栈** | Azure Functions（Python 3.12，Flex Consumption）· Event Hubs · ADLS Gen2 · Application Insights · Static Web Apps · Bicep |
+| **本地运行** | `python scripts/serve_dashboard.py` —— 看板用仓库内的样本数据渲染，不需要 Azure 账号 |
+| **线上部署** | 已暂停，见下 |
+
+> **托管的部署目前是关闭的。** 同一订阅下的另一个项目——一个约 \$240/月的
+> Azure AI Search Standard 实例——耗尽了额度，订阅转为只读。天气管道本身只占
+> 这笔账单的约 2%。计费周期重置后会恢复，处置方案见
+> [`docs/deployment.md`](docs/deployment.md)。
+>
+> 我宁可把这件事写出来，也不愿留一个点开是 404 的链接。真正去测这套东西的成本、
+> 并且第一次测错了，反而是这个项目里比较有用的部分之一——最初 README 估的是
+> 每月 \$12–14，实测是 \$44。
+
+## 版本
+
+三个版本，每个都只比前一个多一个 commit，所以 `git diff v1.0 v1.1` 就恰好是那一步的
+完整故事，不掺任何别的东西。
+
+| | 新增了什么 | 延伸阅读 |
+| --- | --- | --- |
+| **[v1.0](https://github.com/Shomao1998/weather-streaming-app/tree/v1.0)** | 管道本身。30 秒轮询 → Event Hubs → medallion 数据湖 → 加工层 → 看板，跑在 Flex Consumption 上，全量 Bicep、OIDC 部署、三条告警规则。 | [`docs/architecture.md`](docs/architecture.md) |
+| **[v1.1](https://github.com/Shomao1998/weather-streaming-app/tree/v1.1)** | 确定性建议卡片。规则加模板——不用模型、不用检索。系统能说出的每一句话都是可审阅的固定字符串，`AdviceContentProvider` 就是 v1.2 接入的那道接缝。 | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
+| **[v1.2](https://github.com/Shomao1998/weather-streaming-app/tree/v1.2)** | 检索式生成建议。模型根据当前天气事实加检索到的官方指引来写措辞，并且必须标出出处；任何一条失败路径都回落到 v1.1 卡片。 | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
+
+`main` 是 v1.0。后续版本在各自的 tag 以及 `release/v1.1`、`release/v1.2` 分支上，
+等订阅恢复到可部署状态后再合入 `main`。
 
 ---
 
@@ -177,17 +199,22 @@ az deployment group create \
 
 ## 成本
 
-每月约 **12–14 美元**，其中一项占了绝大部分：
+我估的是每月 **12–14 美元**，实测约 **44 美元**——差了三倍。与其悄悄改掉，不如写下来。
 
-| 资源 | 每月 |
-| --- | --- |
-| Event Hubs Basic | 约 $11 |
-| Function App（Flex Consumption） | 约 9 万次执行下 $1–2 |
-| 存储（ADLS Gen2 + 运行时） | < $1 |
-| Log Analytics / App Insights | $0，在 5GB 免费额度内 |
-| Static Web Apps | $0（Free 层） |
+| 资源 | 原估算 | 估错在哪 |
+| --- | --- | --- |
+| Event Hubs Basic | 约 $11 | 估对了。 |
+| Function App（Flex Consumption） | 约 9 万次执行下 $1–2 | Flex **没有免费执行额度**。有免费额度的是 Consumption（Y1），我把那个假设直接搬了过来——可这个订阅的 VM 配额为 0，Y1 根本部署不了。 |
+| 存储（ADLS Gen2 + 运行时） | < $1 | 大致正确。 |
+| Log Analytics / App Insights | $0，在 5GB 免费额度内 | 实际**按摄入 GB 计费**，而一个 30 秒的定时器在 `Information` 级别下写入的量远超预期。把默认日志级别降到 `Warning`，既是降噪也是降本。 |
+| Azure Monitor 告警规则 | 没算 | 每条规则每月约 $1，共三条。 |
+| Static Web Apps | $0（Free 层） | 估对了。 |
 
-Event Hubs 是唯一有意义的开销，也是唯一严格可选的组件——sink 层是一个接口，
+上表是最初的估算；修正版要等订阅恢复、攒够一整周干净的账单数据后再出。这个教训可以外推：
+让无服务器估算显得便宜的那些免费额度，是**绑定在特定 SKU 上的**——一旦平台约束逼你换 SKU，
+它们会悄无声息地消失。
+
+Event Hubs 是最大的单项开销，也是唯一严格可选的组件——sink 层是一个接口，
 把 `EVENT_HUB_ENABLED` 设为 `false` 就让采集直接写入 bronze。
 
 ### 数据保留
