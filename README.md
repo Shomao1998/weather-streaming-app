@@ -45,6 +45,14 @@ Separately on that project I tracked task progress across teams and maintained t
 reporting it. Drawing on other open-source portfolio projects, this one merges the two
 requirements into a streaming weather collection and monitoring dashboard.
 
+A third requirement on the same engagement never got built. The migration would leave staff working
+in a system they did not know, and the plan was a **card-style chatbot** answering their questions
+from the updated internal knowledge base and FAQ — retrieval over a document set that was itself
+changing week by week. It was still early-stage planning when I left. The advice card in this
+version is the deterministic half of that idea: it fires on a condition and words itself from
+reviewed templates, with no model anywhere. Retrieval is the next step, and the seam it plugs into
+is already here.
+
 **Build method.** I defined the requirements, constraints and acceptance criteria and made the
 scope and cost decisions; the implementation was produced by iterating with an AI coding agent.
 
