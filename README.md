@@ -7,11 +7,12 @@ streamed through Event Hubs, landed in a data lake, curated into a queryable tab
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
 
 On top of it sits a **card-style advisory feature**: a suggestion that fires on a weather
-condition, worded from reviewed templates with no model anywhere. Every sentence it can emit is a
-string a person approved, and every decision it makes is reproducible in a unit test.
+condition, worded from retrieved official safety guidance, with every recommendation traceable to
+the passage it came from. Behind it, always, is a deterministic template — if retrieval or the
+model fails in any way, that is what writes the card.
 
-> **You are reading v1.1.** What changed in this version, and why, is in its
-> [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1);
+> **You are reading v1.2.** What changed in this version, and why, is in its
+> [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2);
 > the full version history is on the
 > [releases page](https://github.com/Shomao1998/weather-streaming-app/releases).
 
@@ -238,7 +239,7 @@ dashboard/                        three files, no framework, no external request
 knowledge/                        reviewed source registry, raw documents, built index
 evals/                            53 retrieval and generation cases, run as a CI gate
 scripts/                          ingestion, index build, architecture render, sample data, OIDC
-tests/                            326 tests
+tests/                            329 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
 docs/advice.md                    advice rules, card protocol (v1.1)
 docs/rag.md                       knowledge base, retrieval, grounding, evaluation

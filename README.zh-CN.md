@@ -5,11 +5,12 @@
 一条跑在 Azure 上的无服务器采集与监控管道：每 30 秒采集一次遥测数据，经 Event Hubs 流入数据湖，
 加工成可查询的表，最后呈现在一个公开看板上——**并且对管道本身和流经它的数据都做了告警**。
 
-管道之上是一个**卡片式建议功能**：由天气条件触发，措辞取自经过审阅的模板，全程没有模型参与。
-它能说出的每一句话都是一个人批准过的字符串，它做的每一个决策都能在单测里复现。
+管道之上是一个**卡片式建议功能**：由天气条件触发，措辞取自检索到的官方安全指引，
+每一条建议都能追溯到它出自哪一段。而它背后始终有一套确定性模板——检索或模型
+只要出任何问题，卡片就由模板来写。
 
-> **你正在看的是 v1.1。** 这一版改了什么、为什么这么改，见它的
-> [release 说明](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)；
+> **你正在看的是 v1.2。** 这一版改了什么、为什么这么改，见它的
+> [release 说明](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)；
 > 完整的版本历史在
 > [releases 页面](https://github.com/Shomao1998/weather-streaming-app/releases)。
 
@@ -206,7 +207,7 @@ dashboard/                        三个文件，无框架，无外部请求
 knowledge/                        来源登记表、原始文档、构建好的索引
 evals/                            53 个检索与生成用例，作为 CI 门禁运行
 scripts/                          知识摄取、索引构建、架构图渲染、样本数据、OIDC 配置
-tests/                            326 个测试
+tests/                            329 个测试
 docs/architecture.md              更深的权衡、成本、被否掉的备选方案
 docs/advice.md                    建议规则、卡片协议（v1.1）
 docs/rag.md                       知识库、检索、grounding、评测
