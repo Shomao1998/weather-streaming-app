@@ -31,8 +31,8 @@
 | **[v1.1](https://github.com/Shomao1998/weather-streaming-app/tree/v1.1)** | 确定性建议卡片。规则加模板——不用模型、不用检索。系统能说出的每一句话都是可审阅的固定字符串，`AdviceContentProvider` 就是 v1.2 接入的那道接缝。 | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
 | **[v1.2](https://github.com/Shomao1998/weather-streaming-app/tree/v1.2)** | 检索式生成建议。模型根据当前天气事实加检索到的官方指引来写措辞，并且必须标出出处；任何一条失败路径都回落到 v1.1 卡片。 | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
 
-`main` 是 v1.0。后续版本在各自的 tag 以及 `release/v1.1`、`release/v1.2` 分支上，
-等订阅恢复到可部署状态后再合入 `main`。
+`main` 是 v1.0 加上这一页导航。后续每个版本都是一个 tag，并有对应的 `release/*`
+分支；等订阅恢复到可部署状态后再合入 `main`。
 
 ---
 
