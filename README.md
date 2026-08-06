@@ -31,9 +31,9 @@ exactly the story of that step and nothing else.
 
 | | What it adds | Read |
 | --- | --- | --- |
-| **[v1.0](https://github.com/Shomao1998/weather-streaming-app/tree/v1.0)** | The pipeline. 30-second polling → Event Hubs → medallion data lake → curated serving layer → dashboard, on Flex Consumption, with Bicep, OIDC deployment and three alert rules. | [`docs/architecture.md`](docs/architecture.md) |
-| **[v1.1](https://github.com/Shomao1998/weather-streaming-app/tree/v1.1)** | Deterministic advice cards. Rules and templates — no model, no retrieval. Every sentence the system can emit is a reviewable string, and `AdviceContentProvider` is the seam v1.2 slots into. | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
-| **[v1.2](https://github.com/Shomao1998/weather-streaming-app/tree/v1.2)** | Retrieval-grounded advice. A model writes the copy from live weather facts plus retrieved official guidance, and must cite the passage it came from. Every failure path returns a v1.1 card. | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
+| **[v1.0](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.0)** | The pipeline. 30-second polling → Event Hubs → medallion data lake → curated serving layer → dashboard, on Flex Consumption, with Bicep, OIDC deployment and three alert rules. | [`docs/architecture.md`](docs/architecture.md) |
+| **[v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)** | Deterministic advice cards. Rules and templates — no model, no retrieval. Every sentence the system can emit is a reviewable string, and `AdviceContentProvider` is the seam v1.2 slots into. | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
+| **[v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)** | Retrieval-grounded advice. A model writes the copy from live weather facts plus retrieved official guidance, and must cite the passage it came from. Every failure path returns a v1.1 card. | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
 
 `main` carries v1.0 plus this page. Each later version is a tag, with a
 matching `release/*` branch; they are merged into `main` once the
