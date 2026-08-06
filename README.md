@@ -6,12 +6,28 @@ A serverless ingestion-and-monitoring pipeline on Azure: telemetry is polled eve
 streamed through Event Hubs, landed in a data lake, curated into a queryable table, and surfaced on
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
 
+> **You are reading v1.1.** What changed in this version, and why, is in its
+> [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1);
+> the full version history is on the
+> [releases page](https://github.com/Shomao1998/weather-streaming-app/releases).
+
 | | |
 | --- | --- |
-| **Live dashboard** | https://lively-pond-063e00c0f.7.azurestaticapps.net |
-| **Health endpoint** | https://func-weather-e5lpvy.azurewebsites.net/health |
-| **Live API** | [`/api/latest`](https://func-weather-e5lpvy.azurewebsites.net/api/latest) · [`/api/timeseries`](https://func-weather-e5lpvy.azurewebsites.net/api/timeseries) · [`/api/breaches`](https://func-weather-e5lpvy.azurewebsites.net/api/breaches) |
 | **Stack** | Azure Functions (Python 3.12, Flex Consumption) · Event Hubs · ADLS Gen2 · Application Insights · Static Web Apps · Bicep |
+| **Run it locally** | `python scripts/serve_dashboard.py` — the dashboard renders committed sample data, no Azure account needed |
+| **Live deployment** | Paused. See below. |
+
+> **The hosted deployment is currently off.** A different project in the same
+> subscription — an Azure AI Search Standard instance at roughly \$240/month —
+> exhausted the credit, and the subscription went read-only. The weather
+> pipeline was about 2% of that bill. It is being restored after the billing
+> period resets; the disposal plan is in
+> [`docs/deployment.md`](docs/deployment.md).
+>
+> I would rather say this than leave a link that 404s. Measuring what this
+> actually costs, and being wrong about it the first time, turned out to be one
+> of the more useful parts of the project — the original README estimated
+> \$12–14/month and the measured figure was \$44.
 
 ---
 
@@ -224,17 +240,25 @@ for the first-deployment checklist, the Key Vault secret, and CI authentication 
 
 ## Cost
 
-Roughly **$12–14 a month**, dominated by one line item:
+I estimated this at **$12–14 a month**. Measured, it was about **$44** — a
+three-times miss, and worth writing down rather than quietly correcting.
 
-| Resource | Monthly |
-| --- | --- |
-| Event Hubs Basic | ~$11 |
-| Function App (Flex Consumption) | ~$1–2 at ~90k executions |
-| Storage (ADLS Gen2 + runtime) | <$1 |
-| Log Analytics / App Insights | $0 within the 5 GB free grant |
-| Static Web Apps | $0 (Free tier) |
+| Resource | Estimated | Why the estimate was wrong |
+| --- | --- | --- |
+| Event Hubs Basic | ~$11 | Correct. |
+| Function App (Flex Consumption) | ~$1–2 at ~90k executions | Flex has **no free execution grant**. Consumption (Y1) does, and I carried that assumption over — but Y1 could not be deployed at all on this subscription's zero VM quota. |
+| Storage (ADLS Gen2 + runtime) | <$1 | Roughly correct. |
+| Log Analytics / App Insights | $0 within the 5 GB free grant | Billed **per GB ingested**, and a 30-second timer writing at `Information` level ingests more than expected. Lowering the default log level to `Warning` was as much a cost fix as a noise fix. |
+| Azure Monitor alert rules | not counted | ~$1 per rule per month, three rules. |
+| Static Web Apps | $0 (Free tier) | Correct. |
 
-Event Hubs is the only meaningful cost and the only component that is strictly optional — the sink
+The line items above are the original estimate; a corrected table is pending a
+full week of clean billing data after the subscription is restored. The lesson
+generalises past this project: the free grants that make a serverless estimate
+look cheap are attached to *specific SKUs*, and a platform constraint that
+forces a different SKU can quietly delete them.
+
+Event Hubs is the largest single line and the only component that is strictly optional — the sink
 layer is an interface, and `EVENT_HUB_ENABLED=false` makes ingestion write straight to bronze.
 
 ### Retention
