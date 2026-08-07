@@ -6,6 +6,10 @@ A serverless ingestion-and-monitoring pipeline on Azure: telemetry is polled eve
 streamed through Event Hubs, landed in a data lake, curated into a queryable table, and surfaced on
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
 
+On top of it sits a **card-style advisory feature**: a suggestion that fires on a weather
+condition, worded from reviewed templates with no model anywhere. Every sentence it can emit is a
+string a person approved, and every decision it makes is reproducible in a unit test.
+
 > **You are reading v1.1.** What changed in this version, and why, is in its
 > [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1);
 > the full version history is on the
