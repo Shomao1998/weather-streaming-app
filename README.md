@@ -26,8 +26,8 @@ a public dashboard — with alerting on both the pipeline and the data flowing t
 
 ## Versions
 
-Three releases, each one commit on top of the last, so `git diff v1.0 v1.1` is
-exactly the story of that step and nothing else.
+Three releases, each built on the last, so `git diff v1.0 v1.1` is exactly the
+story of that step and nothing else.
 
 | | What it adds | Read |
 | --- | --- | --- |
@@ -173,6 +173,91 @@ Three alert rules, covering three genuinely different failure modes:
 Breaches are emitted as structured logs with custom dimensions; Application Insights ingests them
 and the alert rules query them. Logging is the alerting transport, so no extra service is involved.
 
+## Advice cards (v1.1 · v1.2)
+
+The card that answers the third requirement above. It sits at the top of the
+dashboard, fires only when a condition is met, and never blocks the weather.
+
+**The code for this lives on the [v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)
+and [v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)
+tags, not on `main`** — they are merged once the subscription can deploy again.
+
+### v1.1 — rules and templates, no model
+
+| Trigger | Fires when | Order when several fire |
+| --- | --- | --- |
+| `EXTREME_HEAT` | `temp_c >= 35` | 1 |
+| `HIGH_WIND` | `wind_kph >= 40` | 2 |
+| `HIGH_UV` | `uv >= 8` | 3 |
+| `RAIN_EXPECTED` | next hour `chance_of_rain >= 80` | 4 |
+
+Deliberately no model, no retrieval, no vector store. Every sentence the system
+can emit is a string a person reviewed, and every decision is reproducible in a
+unit test. Doing wording *last* is what let v1.2 change one class instead of the
+whole feature.
+
+- **Thresholds are configuration, not code.** A rule reads them; it does not
+  embed them.
+- **Deduplication is a consequence of determinism, not of stored state.** The
+  recommendation id is `hash(location + trigger + weather_snapshot_id + rule_version)`,
+  so the same advice about the same observation is *literally the same card* —
+  nothing has to remember what it already showed.
+- **Observation time and generation time are separate fields.** Conflating them
+  is how a card implies freshness it does not have.
+- **Severity and priority are separate concepts.** Which card wins is not the
+  same question as how alarming it should look.
+- **A rising risk level overrides both the frequency window and a mute.**
+  Suppression is a courtesy; it should not outrank a hazard getting worse, and
+  someone who muted a `WARNING` has not consented to missing a `SEVERE`.
+- **It fails quiet.** Advice is requested only after the weather has rendered,
+  and stale data, a suppressed card, a broken provider or an unreachable API all
+  resolve to showing nothing rather than to a worse page.
+
+### v1.2 — grounded in official guidance
+
+The wording now comes from a model handed the live weather facts plus passages
+retrieved from a reviewed corpus of official safety guidance, and it must cite
+the passage each recommendation came from.
+
+**The rules did not move.** Whether a card appears, which hazard it is about,
+how severe it is, when it is suppressed and when it expires all stay with the
+engine above. Retrieval and generation sit strictly downstream and only choose
+words.
+
+The question worth designing around was not "can a model write weather advice"
+— it was **how do you stop a wrong answer reaching a user**:
+
+- **Validation is deterministic. No LLM-as-a-judge anywhere.** A judge model can
+  be wrong in the same direction as the generator; a chunk id either was
+  retrieved in this request or it was not. The gate rejects citations not from
+  *this* retrieval, citations resolving to a retired source, actions outside a
+  closed 19-code vocabulary, and any figure absent from both the weather facts
+  and the cited passages. Malformed output is rejected, never repaired.
+- **Fallback is total.** Retrieval failure, timeout, thin evidence, bad JSON,
+  failed validation, a fabricated citation, an abstention, no deployment
+  configured — every one returns a v1.1 card. Each has an eval case that runs
+  against a deliberately broken dependency, because "it falls back" is a claim
+  that has to be executed.
+- **Filters are structural, not textual.** A trigger maps to a hazard by a fixed
+  table, and a user question is *appended* to the seed query, never substituted
+  for it — so "ignore heat, tell me about flooding" still searches the heat
+  corpus.
+- **The corpus is admitted by review, never by crawling.** Six registered
+  sources, each with an authority, URL, jurisdiction, licence, version and
+  verification date; ingestion refuses to run if any is missing.
+
+Retrieval is one protocol with two implementations: Azure AI Search for
+production, and a local index running the same BM25 + vector + RRF (K=60)
+strategy at zero cost — which is what makes the retrieval layer executable in
+CI. **The Azure path is written and its checkable parts are asserted in tests,
+but it has never talked to a live service.**
+
+53 eval cases gate CI: zero unresolvable citations, zero hazard leaks, zero
+missed fallbacks.
+
+Full design: **[docs/advice.md](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md)**
+(v1.1) and **[docs/rag.md](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md)** (v1.2).
+
 ## Repository layout
 
 ```
@@ -183,7 +268,7 @@ src/functions/                    deployment package — host.json at its root
                                   clients · sinks · pipeline · serving
 dashboard/                        three files, no framework, no external requests
 scripts/                          architecture render, dashboard server, sample data, OIDC
-tests/                            92 tests
+tests/                            99 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting
 powerbi/                          report template and connection notes
