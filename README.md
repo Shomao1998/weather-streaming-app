@@ -6,6 +6,12 @@ A serverless ingestion-and-monitoring pipeline on Azure: telemetry is polled eve
 streamed through Event Hubs, landed in a data lake, curated into a queryable table, and surfaced on
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
 
+On top of it sits a **card-style advisory feature**, modelled on a chatbot that was planned for the
+same cloud migration and never built: a suggestion that fires on a weather condition, worded from
+retrieved official safety guidance, with every recommendation traceable to the passage it came
+from. Behind it, always, is a deterministic template — if retrieval or the model fails in any way,
+that is what writes the card.
+
 | | |
 | --- | --- |
 | **Stack** | Azure Functions (Python 3.12, Flex Consumption) · Event Hubs · ADLS Gen2 · Application Insights · Static Web Apps · Bicep |
