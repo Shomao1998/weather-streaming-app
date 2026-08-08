@@ -32,7 +32,7 @@ OUT_DIR = REPO / "docs" / "images"
 CACHE = Path.home() / ".cache" / "azure-architecture-icons"
 ICON_ZIP_URL = "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V19.zip"
 
-WIDTH, HEIGHT = 790, 960
+WIDTH, HEIGHT = 790, 1260
 FONT_STACK = (
     "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
 )
@@ -48,6 +48,8 @@ ICON_FILES = {
     "staticapp": "01007-icon-service-Static-Apps.svg",
     "keyvault": "10245-icon-service-Key-Vaults.svg",
     "powerbi": "03332-icon-service-Power-BI-Embedded.svg",
+    "openai": "03438-icon-service-Azure-OpenAI.svg",
+    "search": "10044-icon-service-Cognitive-Search.svg",
 }
 
 # weatherapi.com is a third-party service and the HTTP endpoints are ordinary
@@ -55,6 +57,14 @@ ICON_FILES = {
 # not stand in for someone else's product, and borrowing an APIM icon would also
 # put a service in the diagram that this architecture does not use — so the
 # external source gets a drawn shape and the API keeps the Functions icon.
+DOCUMENT_ICON = (
+    '<path d="M {x0} {y0} h 22 l 10 10 v 30 a 3 3 0 0 1 -3 3 h -26'
+    ' a 3 3 0 0 1 -3 -3 v -37 a 3 3 0 0 1 3 -3 z"'
+    ' fill="none" stroke="{c}" stroke-width="1.6"/>'
+    '<path d="M {x1} {y0} v 10 h 10" fill="none" stroke="{c}" stroke-width="1.6"/>'
+    '<path d="M {x2} {y1} h 16 M {x2} {y2} h 16 M {x2} {y3} h 10" stroke="{c}" stroke-width="1.4"/>'
+)
+
 EXTERNAL_ICON = (
     '<circle cx="{cx}" cy="{cy}" r="20" fill="none" stroke="{c}" stroke-width="1.6"/>'
     '<ellipse cx="{cx}" cy="{cy}" rx="8.5" ry="20" fill="none" stroke="{c}" stroke-width="1.6"/>'
@@ -133,12 +143,21 @@ NODES = [
          ("HTTP API", "/api/latest …")),
     Node("swa", 665, 920, "staticapp", ("Static Web App", "public dashboard"),
          ("Static Web App", "公开看板")),
+    Node("knowledge", 140, 1080, "document", ("knowledge index", "23 chunks · versioned"),
+         ("知识索引", "23 个 chunk · 带版本")),
+    Node("advice", 325, 1080, "function", ("api_advice", "rules → retrieve → validate"),
+         ("api_advice", "规则 → 检索 → 校验")),
+    Node("openai", 530, 1080, "openai", ("Azure OpenAI", "optional"),
+         ("Azure OpenAI", "可选")),
+    Node("search", 690, 1080, "search", ("AI Search", "optional"), ("AI Search", "可选")),
 ]
 
 GROUPS = [
     Group(55, 140, 355, 118, "Ingestion", "采集"),
     Group(470, 155, 240, 285, "Monitoring", "监控"),
     Group(55, 585, 675, 118, "ADLS Gen2 — data lake", "ADLS Gen2 数据湖"),
+    Group(55, 1010, 675, 200, "Advice cards — on the v1.1 and v1.2 tags",
+          "建议卡片 —— 在 v1.1 与 v1.2 标签上"),
 ]
 
 EDGES = [
@@ -160,6 +179,21 @@ EDGES = [
     Edge("silver", "pbi"),
     Edge("serving", "http"),
     Edge("http", "swa"),
+    # The advice endpoint reads the same serving document the dashboard does;
+    # it adds no storage of its own.
+    Edge("serving", "advice", a_side="right", b_side="top",
+         en="weather snapshot", zh="天气快照",
+         via=((757, 640), (757, 985), (325, 985)), label_at=(560, 985)),
+    Edge("knowledge", "advice"),
+    # Dashed because both are optional. With neither configured the card still
+    # appears, written by the v1.1 template.
+    Edge("advice", "openai", dashed=True),
+    Edge("advice", "search", dashed=True, a_side="bottom", b_side="bottom",
+         via=((325, 1150), (690, 1150))),
+    # Leaves downward, not left: a left exit would run straight through the
+    # knowledge node and land on top of the knowledge -> advice edge.
+    Edge("advice", "swa", a_side="bottom", b_side="left",
+         via=((325, 1180), (30, 1180), (30, 900), (600, 900))),
 ]
 
 
@@ -260,7 +294,13 @@ def render(lang: str, theme_name: str, icons: dict[str, str]) -> str:
 
     for n in NODES:
         lines = n.en if lang == "en" else n.zh
-        if n.icon == "external":
+        if n.icon == "document":
+            out.append(DOCUMENT_ICON.format(
+                c=t["muted"],
+                x0=n.x - 16, y0=n.y - 21, x1=n.x + 6,
+                x2=n.x - 8, y1=n.y - 2, y2=n.y + 6, y3=n.y + 14,
+            ))
+        elif n.icon == "external":
             out.append(EXTERNAL_ICON.format(
                 cx=n.x, cy=n.y, c=t["muted"],
                 x0=n.x - 20, x1=n.x + 20,
