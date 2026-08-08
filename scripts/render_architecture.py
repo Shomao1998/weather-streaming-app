@@ -32,7 +32,7 @@ OUT_DIR = REPO / "docs" / "images"
 CACHE = Path.home() / ".cache" / "azure-architecture-icons"
 ICON_ZIP_URL = "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V19.zip"
 
-WIDTH, HEIGHT = 790, 960
+WIDTH, HEIGHT = 790, 1190
 FONT_STACK = (
     "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
 )
@@ -133,12 +133,16 @@ NODES = [
          ("HTTP API", "/api/latest …")),
     Node("swa", 665, 920, "staticapp", ("Static Web App", "public dashboard"),
          ("Static Web App", "公开看板")),
+    Node("advice", 325, 1080, "function", ("api_advice", "rules → templates"),
+         ("api_advice", "规则 → 模板")),
 ]
 
 GROUPS = [
     Group(55, 140, 355, 118, "Ingestion", "采集"),
     Group(470, 155, 240, 285, "Monitoring", "监控"),
     Group(55, 585, 675, 118, "ADLS Gen2 — data lake", "ADLS Gen2 数据湖"),
+    Group(120, 1010, 355, 150, "Advice cards — deterministic (v1.1)",
+          "建议卡片 —— 确定性（v1.1）"),
 ]
 
 EDGES = [
@@ -160,6 +164,13 @@ EDGES = [
     Edge("silver", "pbi"),
     Edge("serving", "http"),
     Edge("http", "swa"),
+    # The advice endpoint reads the same serving document the dashboard does;
+    # it adds no storage and no service of its own.
+    Edge("serving", "advice", a_side="right", b_side="top",
+         en="weather snapshot", zh="天气快照",
+         via=((757, 640), (757, 985), (325, 985)), label_at=(560, 985)),
+    Edge("advice", "swa", a_side="bottom", b_side="left",
+         via=((325, 1135), (30, 1135), (30, 900), (600, 900))),
 ]
 
 
