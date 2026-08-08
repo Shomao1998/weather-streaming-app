@@ -95,6 +95,7 @@ class AdviceService:
         location: str,
         session_id: str,
         now: datetime | None = None,
+        question: str | None = None,
     ) -> AdviceResult:
         settings = self._settings
         now = now or datetime.now(UTC)
@@ -139,7 +140,7 @@ class AdviceService:
             return AdviceResult(decision.outcome, detail=decision.reason)
 
         try:
-            content = providers.content_for(self._provider, match, ctx)
+            content = providers.content_for(self._provider, match, ctx, question)
         except Exception as exc:
             # A content provider is the part most likely to change and the part
             # most likely to fail once it stops being a lookup table. Its
@@ -169,6 +170,8 @@ class AdviceService:
             generation_method=content.generation_method,
             weather_snapshot_id=ctx.snapshot_id,
             rule_version=settings.advice.rule_version,
+            sources=content.sources,
+            advice_codes=content.advice_codes,
         )
 
         self._repository.record_shown(

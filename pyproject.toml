@@ -8,6 +8,11 @@ requires-python = ">=3.11"
 testpaths = ["tests"]
 pythonpath = ["src/functions"]
 addopts = "-q --strict-markers"
+markers = [
+    # The eval runners spawn a subprocess each; skip with -m "not slow" when
+    # iterating on unit tests.
+    "slow: spawns a subprocess and runs the full eval suite",
+]
 filterwarnings = ["error::DeprecationWarning:weather.*"]
 
 [tool.ruff]

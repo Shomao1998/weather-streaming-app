@@ -1,23 +1,36 @@
 {
   "card": {
-    "recommendation_id": "743957279d4098a20c63cb881ba6c5d7",
+    "recommendation_id": "5a33fc6f87ea432d9018d5c44a90b770",
     "location": "Tokyo",
     "trigger_code": "RAIN_EXPECTED",
     "severity": "info",
     "title": "一小时内可能下雨",
-    "message": "未来一小时降水概率较高，出门记得带伞哦。",
+    "message": "出门记得带伞，路上多留些时间。",
     "evidence": [
       {
         "label": "降水概率",
         "value": "85%"
       }
     ],
-    "weather_observed_at_utc": "2026-08-05T05:44:00Z",
-    "generated_at_utc": "2026-08-05T05:44:45.252778Z",
-    "expires_at_utc": "2026-08-05T06:44:45.252778Z",
-    "generation_method": "template-v1",
-    "weather_snapshot_id": "9e124f7b1b73896f",
+    "weather_observed_at_utc": "2026-08-05T06:27:00Z",
+    "generated_at_utc": "2026-08-05T06:27:52.506074Z",
+    "expires_at_utc": "2026-08-05T07:27:52.506074Z",
+    "generation_method": "rag-v1",
+    "weather_snapshot_id": "28eea81cb3a3c443",
     "rule_version": "2026-08-04",
+    "sources": [
+      {
+        "chunk_id": "nws-flood-during-000-65f65e4e6d8a",
+        "source_document_id": "nws-flood-during",
+        "authority": "US National Weather Service (NOAA)",
+        "title": "Flood Safety — Actions During Heavy Rain and Flooding",
+        "source_url": "https://www.weather.gov/safety/flood-during"
+      }
+    ],
+    "advice_codes": [
+      "CARRY_UMBRELLA",
+      "ALLOW_EXTRA_TRAVEL_TIME"
+    ],
     "actions": [
       {
         "type": "dismiss",

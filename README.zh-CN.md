@@ -5,11 +5,12 @@
 一条跑在 Azure 上的无服务器采集与监控管道：每 30 秒采集一次遥测数据，经 Event Hubs 流入数据湖，
 加工成可查询的表，最后呈现在一个公开看板上——**并且对管道本身和流经它的数据都做了告警**。
 
-管道之上是一个**卡片式建议功能**：由天气条件触发，措辞取自经过审阅的模板，全程没有模型参与。
-它能说出的每一句话都是一个人批准过的字符串，它做的每一个决策都能在单测里复现。
+管道之上是一个**卡片式建议功能**：由天气条件触发，措辞取自检索到的官方安全指引，
+每一条建议都能追溯到它出自哪一段。而它背后始终有一套确定性模板——检索或模型
+只要出任何问题，卡片就由模板来写。
 
-> **你正在看的是 v1.1。** 这一版改了什么、为什么这么改，见它的
-> [release 说明](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)；
+> **你正在看的是 v1.2。** 这一版改了什么、为什么这么改，见它的
+> [release 说明](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)；
 > 完整的版本历史在
 > [releases 页面](https://github.com/Shomao1998/weather-streaming-app/releases)。
 
@@ -67,7 +68,7 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-zh-dark.svg">
-    <img src="docs/images/architecture-zh-light.svg" alt="管道架构：weatherapi.com 经两个定时函数写入 Event Hubs；archive_to_bronze 将流排空到 bronze 层；curate 每小时加工出 silver Parquet 与 serving JSON；serving 经 HTTP API 供给 Static Web App 看板，silver 供给 Power BI；阈值突破进入 Application Insights 并触发 Azure Monitor 告警规则。下方 api_advice 读取看板读的同一份 serving 快照，把一张规则驱动的卡片返回看板。" width="560">
+    <img src="docs/images/architecture-zh-light.svg" alt="管道架构：weatherapi.com 经两个定时函数写入 Event Hubs；archive_to_bronze 将流排空到 bronze 层；curate 每小时加工出 silver Parquet 与 serving JSON；serving 经 HTTP API 供给 Static Web App 看板，silver 供给 Power BI；阈值突破进入 Application Insights 并触发 Azure Monitor 告警规则。下方 api_advice 读取同一份 serving 快照与一份带版本的知识索引，可选调用 Azure OpenAI 与 Azure AI Search，最后把卡片返回看板。" width="560">
   </picture>
 </p>
 
@@ -135,9 +136,9 @@ Event Hubs、Storage 和 Key Vault 全部通过标识访问。
 
 天气值得提醒时，看板显示一条简短、可执行的建议——「带伞」「补水」——并附上它依据的那个数值。
 
-第一阶段是确定性的：规则加模板，**不用模型、不用检索**。系统能说出的每一句话都是固定字符串，
+v1.1 是确定性的：规则加模板，**不用模型、不用检索**。系统能说出的每一句话都是固定字符串，
 所以同样的天气永远产出同样的措辞，卡片可以在测试里被精确断言。
-`providers.AdviceContentProvider` 就是第二阶段接入检索式生成的接缝——
+`providers.AdviceContentProvider` 就是 v1.2 接入检索式生成的接缝——
 规则、频控策略和卡片协议都不需要改动。
 
 | 触发条件 | 阈值 | 优先级 |
@@ -154,7 +155,32 @@ Event Hubs、Storage 和 Key Vault 全部通过标识访问。
 所以「同一条观测下的同一条建议」本来就是同一张卡片。而风险等级上升时，
 频控窗口和静音都会被突破——因为用户关掉了一条温和提醒，不该成为扣下更严重提醒的理由。
 
-完整设计、API 协议与第二阶段方案见 **[docs/advice.md](docs/advice.md)**。
+完整设计与 API 协议见 **[docs/advice.md](docs/advice.md)**。
+
+### v1.2 —— 建议须有官方出处
+
+v1.2 把模板换成了模型：模型拿到的是当前天气事实，加上从一小份官方安全指引
+语料中检索到的段落，并且必须为每条建议标出它来自哪一段。
+
+规则层没有动。是否出卡、属于哪种风险、严重度多少、何时抑制、何时过期，仍然全部
+由上面那套确定性引擎决定。检索和生成只负责措辞——一旦它们出任何问题，卡片就由
+v1.1 的模板来写。
+
+| | |
+| --- | --- |
+| 语料 | 6 个登记来源（5 个启用，1 个刻意下架），23 个 chunk，美国联邦公共领域文件 |
+| 摄取 | chunk id 由内容寻址——重跑逐字节复现同一份索引 |
+| 检索 | BM25 + 向量混合，RRF K=60，危害类型/司法辖区/`enabled` 以结构化过滤器施加 |
+| 校验 | 全部由确定性代码完成——citation 必须落在*本次*检索里，动作只能取自 19 个封闭编码，数字必须出现在天气事实或被引段落中 |
+| 兜底 | 任何一条失败路径都回落到 v1.1 卡片 |
+| 评测 | 53 个用例，随 CI 运行；0 条无法解析的 citation、0 次危害串档、0 次该兜底却没兜底 |
+
+检索层是一个接口配两套实现：生产用 Azure AI Search，另一套本地实现跑同样的策略且
+零成本——正是它让检索层能在 CI 里真跑起来，也正是它让这个功能在订阅被停用期间仍
+然能继续开发。**Azure 那条路径代码写完了，能离线校验的部分（OData 过滤器、索引
+schema、文档字段）都有测试断言，但它从未连过真实服务。**
+
+完整设计、评测结果与局限见 **[docs/rag.md](docs/rag.md)**。
 
 ## 监控
 
@@ -178,10 +204,13 @@ src/functions/                    部署包 —— host.json 在其根目录
   weather/                        config · api · models · transform · monitoring
                                   clients · sinks · pipeline · serving
 dashboard/                        三个文件，无框架，无外部请求
-scripts/                          架构图渲染、本地看板服务、样本数据、OIDC 配置
-tests/                            185 个测试
+knowledge/                        来源登记表、原始文档、构建好的索引
+evals/                            53 个检索与生成用例，作为 CI 门禁运行
+scripts/                          知识摄取、索引构建、架构图渲染、样本数据、OIDC 配置
+tests/                            329 个测试
 docs/architecture.md              更深的权衡、成本、被否掉的备选方案
-docs/advice.md                    建议规则、卡片协议、第二阶段方案
+docs/advice.md                    建议规则、卡片协议（v1.1）
+docs/rag.md                       知识库、检索、grounding、评测
 docs/deployment.md                部署手册、首次部署清单、排障
 powerbi/                          报表模板与连接说明
 ```

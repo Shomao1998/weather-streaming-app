@@ -38,6 +38,22 @@ jobs:
       - name: Test
         run: pytest --cov=weather --cov-report=term-missing
 
+      - name: Knowledge index is not stale
+        # Ingestion is content-addressed and deterministic, so a corpus edit
+        # that was never re-ingested shows up as a diff here rather than as a
+        # citation pointing at text nobody wrote.
+        run: python scripts/ingest_knowledge.py --check --offline
+
+      - name: Retrieval evaluation
+        # A ranking regression, or a hazard filter leaking into another
+        # corpus, fails the build. No Azure resources and no model spend.
+        run: python evals/run_retrieval_eval.py --fail-under 0.95
+
+      - name: Generation evaluation
+        # Gates on the three conditions under which a wrong answer could reach
+        # a user: an unresolvable citation, banned output, a missed fallback.
+        run: python evals/run_generation_eval.py
+
       - name: Sample data still regenerates
         # Shape drift is caught by tests/test_sample_data.py; this only proves
         # the generator itself still runs against the current code.

@@ -91,6 +91,16 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Stage the knowledge index into the package
+        # The package root is src/functions/, but the knowledge index lives at
+        # the repository root because it is authored and evaluated there.
+        # Without this copy, enabling RAG_ENABLED on Azure would find no index
+        # and silently stay on templates.
+        run: |
+          mkdir -p src/functions/knowledge/processed
+          cp knowledge/processed/index.json src/functions/knowledge/processed/
+          python scripts/ingest_knowledge.py --check --offline
+
       - name: Deploy
         uses: Azure/functions-action@v1
         with:

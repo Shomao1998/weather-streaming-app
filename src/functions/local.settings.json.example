@@ -38,6 +38,27 @@
     "ALERT_MIN_TEMP_C": "-10",
     "ALERT_MAX_WIND_KPH": "60",
     "ALERT_MAX_PM2_5": "55",
-    "ALERT_MAX_US_EPA_INDEX": "4"
+    "ALERT_MAX_US_EPA_INDEX": "4",
+
+    "//6": "--- Advice, v2 (RAG). Off by default: with RAG_ENABLED false the",
+    "//7": "advice card behaves exactly as it did in v1.1, from templates. ---",
+    "RAG_ENABLED": "false",
+    "RAG_INDEX_PATH": "knowledge/processed/index.json",
+    "RAG_TOP_K": "4",
+    "RAG_MIN_CHUNKS": "1",
+    "RAG_TIMEOUT_SECONDS": "8",
+    "RAG_JURISDICTION": "US",
+    "RAG_LOCALE": "en",
+    "RAG_LANGUAGE": "zh",
+
+    "//8": "--- Azure OpenAI. Managed identity only: there is no key setting,",
+    "//9": "here or anywhere else. Leave unset to stay on templates. ---",
+    "//RAG_OPENAI_ENDPOINT": "https://<account>.openai.azure.com",
+    "//RAG_CHAT_DEPLOYMENT": "gpt-4o-mini",
+    "//RAG_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
+
+    "//10": "--- Azure AI Search. Unset means the local index above is used. ---",
+    "//RAG_SEARCH_ENDPOINT": "https://<service>.search.windows.net",
+    "//RAG_SEARCH_INDEX_NAME": "weather-advice-knowledge"
   }
 }

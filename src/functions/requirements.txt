@@ -16,3 +16,13 @@ requests>=2.32,<3
 # Optional: enables Parquet output for the silver layer (Power BI reads it
 # directly). The curation step falls back to CSV if this is unavailable.
 pyarrow>=18,<22
+
+# Optional: retrieval-grounded advice (RAG_ENABLED=true). Both are imported
+# lazily, inside the functions that need them, so a deployment with the feature
+# off never loads either — but they must be in the package for it to be
+# switchable without a redeploy.
+#
+# PyYAML is deliberately absent: `knowledge/sources.yaml` is an authoring
+# artefact, and the runtime only ever reads the built JSON index.
+openai>=1.55,<2
+azure-search-documents>=11.5,<12
