@@ -172,6 +172,89 @@ on the namespace.
 **The dashboard shows "Unreachable".** CORS or a wrong `apiBase`. `dashboard/config.js` is rewritten
 by the deploy workflow; if you deployed the dashboard by hand, it still points at the sample data.
 
+## Enabling retrieval-grounded advice (v1.2)
+
+Optional, and off by default. With `RAG_ENABLED` unset the advice card behaves
+exactly as it did in v1.1 — the deployment steps above need no changes.
+
+The Bicep template deliberately does **not** provision Azure OpenAI or Azure AI
+Search. Both are meaningful recurring costs, and AI Search Standard is the
+service that exhausted this subscription's credit; making them a side effect of
+`az deployment group create` would be a trap. They are opt-in, by hand.
+
+### 1. Build the knowledge index
+
+```bash
+pip install -r requirements-dev.txt
+python scripts/ingest_knowledge.py
+python scripts/ingest_knowledge.py --check   # must pass before you deploy
+```
+
+The index is committed, so this is only needed after editing `knowledge/`.
+
+### 2. Grant the managed identity access
+
+No keys. The Function App's user-assigned identity needs:
+
+```bash
+IDENTITY=$(az identity show -g rg-weather-streaming -n id-weatherstreaming \
+  --query principalId -o tsv)
+
+# Azure OpenAI
+az role assignment create --assignee "$IDENTITY" \
+  --role "Cognitive Services OpenAI User" \
+  --scope "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>"
+
+# Azure AI Search, only if you use it instead of the local index
+az role assignment create --assignee "$IDENTITY" \
+  --role "Search Index Data Reader" \
+  --scope "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Search/searchServices/<service>"
+```
+
+### 3. Turn it on
+
+```bash
+az functionapp config appsettings set -g rg-weather-streaming -n func-weatherstreaming \
+  --settings RAG_ENABLED=true \
+             RAG_OPENAI_ENDPOINT="https://<account>.openai.azure.com" \
+             RAG_CHAT_DEPLOYMENT="gpt-4o-mini" \
+             RAG_EMBEDDING_DEPLOYMENT="text-embedding-3-small"
+```
+
+Leave `RAG_SEARCH_ENDPOINT` unset to retrieve from the committed local index —
+which costs nothing and is the supported configuration for this project. Set it
+only if you have provisioned a search service, and then:
+
+```bash
+export AZURE_SEARCH_ENDPOINT="https://<service>.search.windows.net"
+python scripts/build_search_index.py --create-index
+python scripts/build_search_index.py --upload
+```
+
+`--upload` refuses to run on an index built with the offline embedder. Rebuild
+with `RAG_EMBEDDING_DEPLOYMENT` set first, or the vector half of the index would
+be noise.
+
+### 4. Verify
+
+```bash
+curl -s "https://<app>.azurewebsites.net/api/advice?location=Tokyo" | jq '.generation_method, .sources'
+```
+
+`"rag-v1"` with a populated `sources` array means it is grounded.
+`"template-v1"` means something fell back — the reason is in Application
+Insights:
+
+```kusto
+traces
+| where message startswith "ADVICE_RAG_FALLBACK"
+| project timestamp, customDimensions.fallback_reason, customDimensions.trigger
+| order by timestamp desc
+```
+
+A fallback is not an error. It is the system doing what it was designed to do;
+the log tells you which dependency was unavailable.
+
 ## Tearing it down
 
 Everything created by the template is in one resource group, but the group also holds the

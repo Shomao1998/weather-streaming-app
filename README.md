@@ -7,11 +7,12 @@ streamed through Event Hubs, landed in a data lake, curated into a queryable tab
 a public dashboard — with alerting on both the pipeline and the data flowing through it.
 
 On top of it sits a **card-style advisory feature**: a suggestion that fires on a weather
-condition, worded from reviewed templates with no model anywhere. Every sentence it can emit is a
-string a person approved, and every decision it makes is reproducible in a unit test.
+condition, worded from retrieved official safety guidance, with every recommendation traceable to
+the passage it came from. Behind it, always, is a deterministic template — if retrieval or the
+model fails in any way, that is what writes the card.
 
-> **You are reading v1.1.** What changed in this version, and why, is in its
-> [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1);
+> **You are reading v1.2.** What changed in this version, and why, is in its
+> [release notes](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2);
 > the full version history is on the
 > [releases page](https://github.com/Shomao1998/weather-streaming-app/releases).
 
@@ -80,7 +81,7 @@ Weather data substitutes for logs because the two share three properties:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
-    <img src="docs/images/architecture-light.svg" alt="Pipeline architecture: weatherapi.com feeds two timer functions into Event Hubs; archive_to_bronze drains the stream into a bronze layer; curate runs hourly into silver Parquet and serving JSON; serving is exposed through an HTTP API to a Static Web App dashboard, silver goes to Power BI; threshold breaches flow to Application Insights and on to Azure Monitor alert rules. Below, api_advice reads the same serving snapshot the dashboard does and returns a rule-driven card to it." width="560">
+    <img src="docs/images/architecture-light.svg" alt="Pipeline architecture: weatherapi.com feeds two timer functions into Event Hubs; archive_to_bronze drains the stream into a bronze layer; curate runs hourly into silver Parquet and serving JSON; serving is exposed through an HTTP API to a Static Web App dashboard, silver goes to Power BI; threshold breaches flow to Application Insights and on to Azure Monitor alert rules. Below, api_advice reads the same serving snapshot plus a versioned knowledge index, optionally calls Azure OpenAI and Azure AI Search, and returns a card to the dashboard." width="560">
   </picture>
 </p>
 
@@ -158,7 +159,7 @@ configuration. Event Hubs, Storage and Key Vault are all reached by identity.
 The dashboard shows one short, actionable suggestion when the weather warrants
 it — "take an umbrella", "drink water" — with the reading it was derived from.
 
-Phase one is deterministic: rules and templates, **no model and no retrieval**.
+v1.1 is deterministic: rules and templates, **no model and no retrieval**.
 Every sentence the system can emit is a fixed string, so the same weather always
 produces the same words and the card can be asserted exactly in a test.
 `providers.AdviceContentProvider` is the seam a retrieval-backed generator slots
@@ -181,7 +182,37 @@ Deduplication is a consequence of determinism: the recommendation id is
 advice about the same observation is literally the same card. A rising risk
 level overrides both the frequency window and a mute.
 
-Full design, API contract and the phase-two plan: **[docs/advice.md](docs/advice.md)**.
+Full design and API contract: **[docs/advice.md](docs/advice.md)**.
+
+### v1.2 — grounded in official guidance
+
+v1.2 replaces the templates with a model that is handed the live weather
+facts plus retrieved passages from a small corpus of official safety guidance,
+and must cite the passage every recommendation came from.
+
+The rules did not move. Whether a card appears, which hazard it is about, how
+severe it is, when it is suppressed and when it expires are all still decided by
+the deterministic engine above. Retrieval and generation only choose words —
+and if anything about them fails, the v1.1 template writes the card
+instead.
+
+| | |
+| --- | --- |
+| Corpus | 6 registered sources (5 live, 1 deliberately retired), 23 chunks, US federal public domain |
+| Ingestion | content-addressed chunk ids — re-running reproduces the index byte for byte |
+| Retrieval | hybrid BM25 + vector, RRF K=60, hazard/jurisdiction/`enabled` filters applied structurally |
+| Validation | deterministic only — citations must resolve to *this* retrieval, actions come from a closed 19-code vocabulary, numbers must appear in the weather facts or a cited passage |
+| Fallback | every failure path returns a v1.1 card |
+| Evals | 53 cases, run in CI; 0 unresolvable citations, 0 hazard leaks, 0 missed fallbacks |
+
+Retrieval is an interface with two implementations: Azure AI Search for
+production, and a local index that runs the same strategy at zero cost — which
+is what makes the retrieval layer executable in CI, and what kept this feature
+buildable while the subscription was disabled. **The Azure path is written and
+its checkable parts are asserted in tests, but it has never talked to a live
+service.**
+
+Full design, evaluation results and limitations: **[docs/rag.md](docs/rag.md)**.
 
 ## Monitoring
 
@@ -205,10 +236,13 @@ src/functions/                    deployment package — host.json at its root
   weather/                        config · api · models · transform · monitoring
                                   clients · sinks · pipeline · serving
 dashboard/                        three files, no framework, no external requests
-scripts/                          architecture render, dashboard server, sample data, OIDC
-tests/                            185 tests
+knowledge/                        reviewed source registry, raw documents, built index
+evals/                            53 retrieval and generation cases, run as a CI gate
+scripts/                          ingestion, index build, architecture render, sample data, OIDC
+tests/                            329 tests
 docs/architecture.md              deeper rationale, cost, alternatives considered
-docs/advice.md                    advice rules, card protocol, phase-two plan
+docs/advice.md                    advice rules, card protocol (v1.1)
+docs/rag.md                       knowledge base, retrieval, grounding, evaluation
 docs/deployment.md                runbook, first-deploy checklist, troubleshooting
 powerbi/                          report template and connection notes
 ```

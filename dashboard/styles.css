@@ -574,3 +574,68 @@ main {
   border-color: var(--accent);
   color: var(--text);
 }
+
+/* Citations. Present only on a grounded card — a template card renders
+   exactly as it did in v1.1, with no empty row left behind. */
+.advice__sources {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+
+.advice__source {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.advice__source:hover,
+.advice__source:focus-visible {
+  text-decoration: none;
+  border-bottom-style: solid;
+}
+
+/* Follow-up question. Shown only on a grounded card. */
+.advice__ask {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.advice__ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.advice__ask-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.advice__ask-button {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.8rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--surface);
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.advice__ask-button:hover {
+  filter: brightness(1.08);
+}

@@ -1,0 +1,102 @@
+# Weather-safety knowledge sources.
+#
+# Every document the advice engine may cite is registered here. Nothing is
+# fetched from the open internet at request time: ingestion is an offline,
+# reviewed step, and this file is the record of what was reviewed.
+#
+# `enabled: false` removes a source from all future retrieval without deleting
+# its history, which is what makes a withdrawn or superseded document safe to
+# retire.
+#
+# Editing rules:
+#   * `id` is permanent. Chunk ids derive from it, so changing one orphans
+#     every citation ever emitted.
+#   * Bump `version` whenever `raw/<id>.md` changes. Ingestion replaces all
+#     chunks for a document when its version changes, and leaves them alone
+#     when it does not — that is what makes re-ingestion idempotent.
+#   * `last_verified_at` is a human action. It records that a person opened
+#     the source URL and confirmed the local copy still matches.
+
+index_version: "2026-08-05.1"
+
+sources:
+  - id: nws-heat-during
+    title: "Heat Safety — Actions During Extreme Heat"
+    authority: "US National Weather Service (NOAA)"
+    source_url: "https://www.weather.gov/safety/heat-during"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["heat"]
+    version: "2026-08-05"
+    effective_from: "2026-08-05"
+    last_verified_at: "2026-08-05"
+    license: "US federal government work — public domain (17 U.S.C. §105)"
+    enabled: true
+
+  - id: epa-uv-index-scale
+    title: "UV Index Scale and Protective Actions"
+    authority: "US Environmental Protection Agency"
+    source_url: "https://www.epa.gov/sunsafety/uv-index-scale-0"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["uv"]
+    version: "2026-08-05"
+    effective_from: "2026-08-05"
+    last_verified_at: "2026-08-05"
+    license: "US federal government work — public domain (17 U.S.C. §105)"
+    enabled: true
+
+  - id: nws-wind-during
+    title: "Wind Safety — Actions During High Wind"
+    authority: "US National Weather Service (NOAA)"
+    source_url: "https://www.weather.gov/safety/wind-during"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["wind"]
+    version: "2026-08-05"
+    effective_from: "2026-08-05"
+    last_verified_at: "2026-08-05"
+    license: "US federal government work — public domain (17 U.S.C. §105)"
+    enabled: true
+
+  - id: nws-flood-during
+    title: "Flood Safety — Actions During Heavy Rain and Flooding"
+    authority: "US National Weather Service (NOAA)"
+    source_url: "https://www.weather.gov/safety/flood-during"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["rain", "flood"]
+    version: "2026-08-05"
+    effective_from: "2026-08-05"
+    last_verified_at: "2026-08-05"
+    license: "US federal government work — public domain (17 U.S.C. §105)"
+    enabled: true
+
+  - id: airnow-aqi-basics
+    title: "Air Quality Index Basics"
+    authority: "AirNow (US EPA and partners)"
+    source_url: "https://www.airnow.gov/aqi/aqi-basics/"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["air_quality"]
+    version: "2026-08-05"
+    effective_from: "2026-08-05"
+    last_verified_at: "2026-08-05"
+    license: "US federal government work — public domain (17 U.S.C. §105)"
+    enabled: true
+
+  # Retained as a worked example of retirement: a source that is registered,
+  # has been ingested in the past, and must never appear in retrieval again.
+  # The eval suite asserts that disabled sources are never returned.
+  - id: legacy-heat-advice
+    title: "Superseded internal heat guidance"
+    authority: "Internal draft"
+    source_url: "https://example.invalid/legacy-heat-advice"
+    jurisdiction: "US"
+    locale: "en"
+    hazard_types: ["heat"]
+    version: "2025-01-01"
+    effective_from: "2025-01-01"
+    last_verified_at: "2025-01-01"
+    license: "Internal — not for publication"
+    enabled: false

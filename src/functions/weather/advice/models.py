@@ -150,6 +150,21 @@ class WeatherContext:
 
 
 @dataclass(frozen=True)
+class Source:
+    """A citation the user can follow back to the authority that issued it.
+
+    Only ever populated from chunks that were actually retrieved for this
+    request — never from the corpus at large, and never invented by a model.
+    """
+
+    chunk_id: str
+    source_document_id: str
+    authority: str
+    title: str
+    source_url: str
+
+
+@dataclass(frozen=True)
 class AdviceContent:
     """What a content provider returns: the words, and nothing else.
 
@@ -161,6 +176,11 @@ class AdviceContent:
     message: str
     evidence: tuple[Evidence, ...] = ()
     generation_method: str = "template-v1"
+    # Added in phase two. Empty for the template provider, which is why the
+    # card protocol stayed backward compatible: a consumer that ignores these
+    # fields sees exactly the phase-one payload.
+    sources: tuple[Source, ...] = ()
+    advice_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +198,8 @@ class AdviceCard:
     generation_method: str
     weather_snapshot_id: str
     rule_version: str
+    sources: tuple[Source, ...] = ()
+    advice_codes: tuple[str, ...] = ()
     actions: tuple[Action, ...] = field(
         default_factory=lambda: (
             Action("dismiss", "知道了"),
@@ -189,4 +211,6 @@ class AdviceCard:
         payload = asdict(self)
         payload["evidence"] = [asdict(item) for item in self.evidence]
         payload["actions"] = [asdict(item) for item in self.actions]
+        payload["sources"] = [asdict(item) for item in self.sources]
+        payload["advice_codes"] = list(self.advice_codes)
         return payload

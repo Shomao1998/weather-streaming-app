@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 # about round-trips, not size. Kept explicit so the limit is visible.
 MAX_EVENTS_PER_BATCH = 100
 
+# Serialises sends across every EventHubSink. It is module-level on purpose:
+# the producer it protects is a process-wide singleton (clients.get_event_hub_
+# producer), but build_ingest_sink makes a fresh EventHubSink per call, so a
+# per-instance lock would hand each concurrent invocation its own lock and
+# guard nothing. The 30s and 30min timers collide every half hour; without a
+# shared lock they would enter create_batch()/send_batch() on the same
+# not-thread-safe producer at once.
+_SEND_LOCK = threading.Lock()
+
 
 def _to_payload(record: Any) -> dict[str, Any]:
     if hasattr(record, "to_dict"):
@@ -49,9 +58,10 @@ class EventHubSink:
 
     producer: Any
     name: str = "eventhub"
-    # The SDK's producer is not documented as thread-safe; Python workers can
-    # run invocations concurrently, so serialise sends.
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    # Shared, not per-instance: see _SEND_LOCK. The SDK's producer is not
+    # documented as thread-safe, and every sink over the singleton producer
+    # must contend for the same lock or the serialisation is an illusion.
+    _lock: threading.Lock = field(default=_SEND_LOCK, repr=False, compare=False)
 
     def emit(self, records: Sequence[Any]) -> int:
         if not records:
