@@ -13,21 +13,11 @@ model fails in any way, that is what writes the card.
 
 | | |
 | --- | --- |
+| **Live dashboard** | https://lively-pond-063e00c0f.7.azurestaticapps.net |
+| **Health endpoint** | https://func-weather-e5lpvy.azurewebsites.net/health |
+| **Live API** | [`/api/latest`](https://func-weather-e5lpvy.azurewebsites.net/api/latest) · [`/api/timeseries`](https://func-weather-e5lpvy.azurewebsites.net/api/timeseries) · [`/api/breaches`](https://func-weather-e5lpvy.azurewebsites.net/api/breaches) |
 | **Stack** | Azure Functions (Python 3.12, Flex Consumption) · Event Hubs · ADLS Gen2 · Application Insights · Static Web Apps · Bicep |
 | **Run it locally** | `python scripts/serve_dashboard.py` — the dashboard renders committed sample data, no Azure account needed |
-| **Live deployment** | Paused. See below. |
-
-> **The hosted deployment is currently off.** A different project in the same
-> subscription — an Azure AI Search Standard instance at roughly \$240/month —
-> exhausted the credit, and the subscription went read-only. The weather
-> pipeline was about 2% of that bill. It is being restored after the billing
-> period resets; the disposal plan is in
-> [`docs/deployment.md`](docs/deployment.md).
->
-> I would rather say this than leave a link that 404s. Measuring what this
-> actually costs, and being wrong about it the first time, turned out to be one
-> of the more useful parts of the project — the original README estimated
-> \$12–14/month and the measured figure was \$44.
 
 ## Versions
 
@@ -331,10 +321,18 @@ three-times miss, and worth writing down rather than quietly correcting.
 | Static Web Apps | $0 (Free tier) | Correct. |
 
 The line items above are the original estimate; a corrected table is pending a
-full week of clean billing data after the subscription is restored. The lesson
-generalises past this project: the free grants that make a serverless estimate
-look cheap are attached to *specific SKUs*, and a platform constraint that
-forces a different SKU can quietly delete them.
+full week of clean billing data. The lesson generalises past this project: the
+free grants that make a serverless estimate look cheap are attached to
+*specific SKUs*, and a platform constraint that forces a different SKU can
+quietly delete them.
+
+**It cost about two weeks of downtime to learn.** A different project in the
+same subscription — an Azure AI Search Standard instance at roughly \$240/month
+— exhausted the credit, and the whole subscription went read-only until the
+billing period reset. This pipeline was about 2% of that bill and was taken
+down by a neighbour's spend. That is the argument for the retention policies
+and the toggleable Event Hub above: on a shared subscription, the cost of the
+thing you are not looking at is your problem too.
 
 Event Hubs is the largest single line and the only component that is strictly optional — the sink
 layer is an interface, and `EVENT_HUB_ENABLED=false` makes ingestion write straight to bronze.
