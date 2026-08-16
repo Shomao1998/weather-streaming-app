@@ -130,10 +130,15 @@ jobs:
         # the repository root because it is authored and evaluated there.
         # Without this copy, enabling RAG_ENABLED on Azure would find no index
         # and silently stay on templates.
+        #
+        # The index's freshness is already gated by the `test` job (the
+        # "Knowledge index is not stale" step), which this job transitively
+        # depends on. Re-running --check here would only re-verify that, and it
+        # needs the dev-only PyYAML that this deploy job does not install — so
+        # the copy is all that belongs here.
         run: |
           mkdir -p src/functions/knowledge/processed
           cp knowledge/processed/index.json src/functions/knowledge/processed/
-          python scripts/ingest_knowledge.py --check --offline
 
       - name: Deploy
         uses: Azure/functions-action@v1
