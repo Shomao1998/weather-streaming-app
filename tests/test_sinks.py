@@ -98,6 +98,16 @@ class TestEventHubSink:
         assert sinks.EventHubSink(producer=producer).emit([]) == 0
         assert producer.batches == []
 
+    def test_two_sinks_over_one_producer_share_a_lock(self):
+        """The bug this guards: the producer is a process-wide singleton but
+        build_ingest_sink makes a fresh sink per call. A per-instance lock would
+        give each concurrent invocation its own lock and serialise nothing."""
+        producer = FakeProducer()
+        a = sinks.EventHubSink(producer=producer)
+        b = sinks.EventHubSink(producer=producer)
+        assert a._lock is b._lock is sinks._SEND_LOCK
+
+
 
 class TestBlobSink:
     def test_writes_newline_delimited_json(self):

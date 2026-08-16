@@ -66,6 +66,11 @@ class WeatherApiSettings:
     base_url: str = DEFAULT_BASE_URL
     locations: tuple[str, ...] = ("Tokyo",)
     forecast_days: int = 3
+    # The forecast response carries every hour of every requested day — 72
+    # records per location per poll. The advice engine only ever looks at the
+    # next hour, so the rest is volume nobody reads: at a 30-minute cadence it
+    # would quadruple what lands in bronze.
+    forecast_hours_ahead: int = 6
     timeout_seconds: float = 10.0
     max_retries: int = 3
     # The API key is resolved at call time (Key Vault or a local override), not
@@ -105,11 +110,90 @@ class MonitoringSettings:
 
 
 @dataclass(frozen=True)
+class AdviceSettings:
+    """Thresholds and policy for the advice cards.
+
+    Every number a rule compares against lives here, so the rule engine reads
+    like the business logic it is and a threshold change never means editing a
+    conditional.
+
+    These are deliberately separate from `MonitoringSettings`: an operational
+    alert ("page someone") and a piece of advice ("take an umbrella") fire at
+    different levels, and coupling them would force one to move whenever the
+    other did.
+    """
+
+    enabled: bool = True
+    # Bumping this invalidates every deduplication key, which is how a copy or
+    # threshold change is allowed to reach users who already saw the old card.
+    rule_version: str = "2026-08-04"
+
+    # A card claims to describe the weather now, so it must refuse to be built
+    # on an observation that is no longer "now". The serving layer is curated
+    # hourly, so this has to be wider than that or nothing would ever qualify.
+    max_weather_age_minutes: int = 90
+
+    rain_chance_percent: int = 80
+    uv_index: float = 8.0
+    heat_c: float = 35.0
+    wind_kph: float = 40.0
+
+    card_ttl_minutes: int = 60
+    min_interval_minutes: int = 180
+    # A muted category stays muted for the rest of the UTC day.
+    mute_rest_of_day: bool = True
+
+
+@dataclass(frozen=True)
+class RagSettings:
+    """Phase two. Every field has a default that keeps the feature off.
+
+    An unconfigured deployment must behave exactly like phase one — the
+    retrieval-backed provider is an upgrade, never a prerequisite.
+    """
+
+    enabled: bool = False
+    # Where the built index lives. A local file keeps CI and offline
+    # development free; Azure AI Search is used when an endpoint is set.
+    index_path: str = "knowledge/processed/index.json"
+    search_endpoint: str = ""
+    search_index_name: str = "weather-advice"
+    use_semantic_ranker: bool = False
+
+    openai_endpoint: str = ""
+    chat_deployment: str = ""
+    embedding_deployment: str = ""
+    embedding_dimensions: int = 1536
+
+    top_k: int = 4
+    # Below this many usable passages the provider falls back rather than
+    # letting the model improvise from thin evidence.
+    min_chunks: int = 1
+    jurisdiction: str = "US"
+    locale: str = "en"
+    language: str = "zh"
+
+    request_timeout_seconds: float = 8.0
+    max_output_tokens: int = 300
+
+    retrieval_cache_entries: int = 256
+    retrieval_cache_ttl_seconds: float = 900.0
+    generation_cache_entries: int = 256
+    generation_cache_ttl_seconds: float = 3600.0
+
+    # Used only to estimate spend in telemetry; not a billing source of truth.
+    input_cost_per_1k: float = 0.00015
+    output_cost_per_1k: float = 0.0006
+
+
+@dataclass(frozen=True)
 class Settings:
     weather: WeatherApiSettings = field(default_factory=WeatherApiSettings)
     event_hub: EventHubSettings = field(default_factory=EventHubSettings)
     storage: StorageSettings = field(default_factory=StorageSettings)
     monitoring: MonitoringSettings = field(default_factory=MonitoringSettings)
+    advice: AdviceSettings = field(default_factory=AdviceSettings)
+    rag: RagSettings = field(default_factory=RagSettings)
     environment: str = "local"
 
     def validate(self) -> None:
@@ -144,6 +228,7 @@ def load_settings() -> Settings:
             base_url=_optional("WEATHER_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/"),
             locations=_csv("WEATHER_LOCATIONS", "Tokyo"),
             forecast_days=_int("WEATHER_FORECAST_DAYS", 3),
+            forecast_hours_ahead=_int("WEATHER_FORECAST_HOURS_AHEAD", 6),
             timeout_seconds=float(_int("WEATHER_API_TIMEOUT_SECONDS", 10)),
             max_retries=_int("WEATHER_API_MAX_RETRIES", 3),
             key_vault_url=_optional("KEY_VAULT_URL").rstrip("/"),
@@ -170,6 +255,36 @@ def load_settings() -> Settings:
             max_wind_kph=float(_int("ALERT_MAX_WIND_KPH", 60)),
             max_pm2_5=float(_int("ALERT_MAX_PM2_5", 55)),
             max_us_epa_index=_int("ALERT_MAX_US_EPA_INDEX", 4),
+        ),
+        advice=AdviceSettings(
+            enabled=_bool("ADVICE_ENABLED", True),
+            rule_version=_optional("ADVICE_RULE_VERSION", "2026-08-04"),
+            max_weather_age_minutes=_int("ADVICE_MAX_WEATHER_AGE_MINUTES", 90),
+            rain_chance_percent=_int("ADVICE_RAIN_CHANCE_PERCENT", 80),
+            uv_index=float(_int("ADVICE_UV_INDEX", 8)),
+            heat_c=float(_int("ADVICE_HEAT_C", 35)),
+            wind_kph=float(_int("ADVICE_WIND_KPH", 40)),
+            card_ttl_minutes=_int("ADVICE_CARD_TTL_MINUTES", 60),
+            min_interval_minutes=_int("ADVICE_MIN_INTERVAL_MINUTES", 180),
+            mute_rest_of_day=_bool("ADVICE_MUTE_REST_OF_DAY", True),
+        ),
+        rag=RagSettings(
+            enabled=_bool("RAG_ENABLED", False),
+            index_path=_optional("RAG_INDEX_PATH", "knowledge/processed/index.json"),
+            search_endpoint=_optional("RAG_SEARCH_ENDPOINT").rstrip("/"),
+            search_index_name=_optional("RAG_SEARCH_INDEX_NAME", "weather-advice"),
+            use_semantic_ranker=_bool("RAG_USE_SEMANTIC_RANKER", False),
+            openai_endpoint=_optional("RAG_OPENAI_ENDPOINT").rstrip("/"),
+            chat_deployment=_optional("RAG_CHAT_DEPLOYMENT"),
+            embedding_deployment=_optional("RAG_EMBEDDING_DEPLOYMENT"),
+            embedding_dimensions=_int("RAG_EMBEDDING_DIMENSIONS", 1536),
+            top_k=_int("RAG_TOP_K", 4),
+            min_chunks=_int("RAG_MIN_CHUNKS", 1),
+            jurisdiction=_optional("RAG_JURISDICTION", "US"),
+            locale=_optional("RAG_LOCALE", "en"),
+            language=_optional("RAG_LANGUAGE", "zh"),
+            request_timeout_seconds=float(_int("RAG_TIMEOUT_SECONDS", 8)),
+            max_output_tokens=_int("RAG_MAX_OUTPUT_TOKENS", 300),
         ),
         environment=_optional("APP_ENVIRONMENT", "local"),
     )

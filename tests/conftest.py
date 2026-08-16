@@ -60,3 +60,35 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch):
     yield
     get_settings.cache_clear()
     clients.reset_for_tests()
+
+
+@pytest.fixture(scope="session")
+def knowledge_index():
+    """The committed knowledge index, loaded once.
+
+    Tests run against the real corpus rather than a toy fixture. A retrieval
+    test that only ever sees three invented chunks proves the ranking code
+    runs, not that it picks the right passage out of a real document set.
+    """
+    from weather.advice.knowledge import KnowledgeIndex
+
+    return KnowledgeIndex.load(REPO_ROOT / "knowledge" / "processed" / "index.json")
+
+
+@pytest.fixture
+def local_retriever(knowledge_index):
+    from weather.advice.embeddings import HashingEmbedder
+    from weather.advice.retrieval import LocalIndexRetriever
+
+    return LocalIndexRetriever(knowledge_index, HashingEmbedder())
+
+
+@pytest.fixture(autouse=True)
+def reset_advice_provider():
+    """The provider is cached process-wide; a leaked one would make test order
+    matter."""
+    from weather.advice import factory
+
+    factory.reset_provider()
+    yield
+    factory.reset_provider()

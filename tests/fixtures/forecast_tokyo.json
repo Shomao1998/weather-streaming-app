@@ -12,7 +12,9 @@
   "current": {
     "last_updated_epoch": 1754092500,
     "temp_c": 31.2,
-    "condition": { "text": "Partly cloudy" }
+    "condition": {
+      "text": "Partly cloudy"
+    }
   },
   "forecast": {
     "forecastday": [
@@ -28,8 +30,79 @@
           "avghumidity": 71,
           "daily_chance_of_rain": 63,
           "uv": 8.0,
-          "condition": { "text": "Patchy rain nearby", "code": 1063 }
-        }
+          "condition": {
+            "text": "Patchy rain nearby",
+            "code": 1063
+          }
+        },
+        "hour": [
+          {
+            "time_epoch": 1754092800,
+            "time": "2025-08-02 09:00",
+            "temp_c": 28.0,
+            "precip_mm": 0.2,
+            "chance_of_rain": 10,
+            "wind_kph": 12.0,
+            "condition": {
+              "text": "Sunny"
+            }
+          },
+          {
+            "time_epoch": 1754096400,
+            "time": "2025-08-02 10:00",
+            "temp_c": 29.0,
+            "precip_mm": 0.4,
+            "chance_of_rain": 20,
+            "wind_kph": 13.0,
+            "condition": {
+              "text": "Sunny"
+            }
+          },
+          {
+            "time_epoch": 1754100000,
+            "time": "2025-08-02 11:00",
+            "temp_c": 30.0,
+            "precip_mm": 1.7,
+            "chance_of_rain": 85,
+            "wind_kph": 14.0,
+            "condition": {
+              "text": "Patchy rain nearby"
+            }
+          },
+          {
+            "time_epoch": 1754103600,
+            "time": "2025-08-02 12:00",
+            "temp_c": 31.0,
+            "precip_mm": 1.2,
+            "chance_of_rain": 60,
+            "wind_kph": 15.0,
+            "condition": {
+              "text": "Patchy rain nearby"
+            }
+          },
+          {
+            "time_epoch": 1754107200,
+            "time": "2025-08-02 13:00",
+            "temp_c": 32.0,
+            "precip_mm": 0.6,
+            "chance_of_rain": 30,
+            "wind_kph": 16.0,
+            "condition": {
+              "text": "Sunny"
+            }
+          },
+          {
+            "time_epoch": 1754110800,
+            "time": "2025-08-02 14:00",
+            "temp_c": 33.0,
+            "precip_mm": 0.1,
+            "chance_of_rain": 5,
+            "wind_kph": 17.0,
+            "condition": {
+              "text": "Sunny"
+            }
+          }
+        ]
       },
       {
         "date": "2025-08-03",
@@ -42,7 +115,10 @@
           "avghumidity": 66,
           "daily_chance_of_rain": 0,
           "uv": 9.0,
-          "condition": { "text": "Sunny", "code": 1000 }
+          "condition": {
+            "text": "Sunny",
+            "code": 1000
+          }
         }
       },
       {
@@ -56,7 +132,10 @@
           "avghumidity": 74,
           "daily_chance_of_rain": 85,
           "uv": 7.0,
-          "condition": { "text": "Moderate rain", "code": 1189 }
+          "condition": {
+            "text": "Moderate rain",
+            "code": 1189
+          }
         }
       }
     ]

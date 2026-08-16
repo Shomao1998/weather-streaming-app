@@ -1,7 +1,7 @@
 # Building the report
 
 Written against the schema the pipeline actually emits — 35 columns, verified against a live
-`silver/current/date=.../current-*.parquet` file rather than assumed.
+`silver/current/date=.../current.parquet` file rather than assumed.
 
 Power BI Desktop is Windows-only. On macOS you need a Windows VM (Parallels, UTM) or a cloud
 Windows host. Everything below is Desktop work; nothing here requires a Pro licence.
@@ -18,9 +18,14 @@ Authenticate with **Account key** (see [README.md](README.md) for why, and for t
 prints it). Choose **Combine → Combine & Transform Data** so Power Query stitches every partition
 into one table and keeps the `date=` folder as a column.
 
+Combining the whole tree is safe because the lake holds **exactly one file per day**
+(`current/date=YYYY-MM-DD/current.parquet`), overwritten in place on each hourly curate. An
+observation therefore appears in exactly one partition — there is no cross-file duplication for
+Power Query to fold away, so a plain combine is correct rather than merely convenient.
+
 ## 2. Power Query
 
-The silver layer is already de-duplicated and flat, so this is short.
+The silver layer is already de-duplicated (within and across files) and flat, so this is short.
 
 **Set types.** Everything arrives correctly typed except the two timestamps, which the pipeline
 writes as ISO-8601 strings:

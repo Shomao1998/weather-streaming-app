@@ -24,6 +24,9 @@ SERVING_LATEST_BLOB = "latest.json"
 SERVING_TIMESERIES_BLOB = "timeseries_24h.json"
 SERVING_BREACHES_BLOB = "breaches_24h.json"
 
+# How far ahead an hourly forecast may be and still count as "the next hour".
+HOURLY_LOOKAHEAD_HOURS = 2
+
 
 @dataclass
 class IngestResult:
@@ -108,6 +111,11 @@ def ingest_forecast(settings: Settings | None = None) -> IngestResult:
             result.failed_locations.append(location)
             continue
         records.extend(transform.to_forecast_records(payload))
+        records.extend(
+            transform.to_forecast_hour_records(
+                payload, hours_ahead=settings.weather.forecast_hours_ahead
+            )
+        )
         records.extend(transform.to_alert_records(payload))
 
     result.records_collected = len(records)
@@ -192,9 +200,41 @@ def _flatten_row(row: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
+def _next_hour_rain(
+    hourly_rows: Sequence[dict[str, Any]],
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Per location, the nearest upcoming hourly forecast.
+
+    "Nearest upcoming" rather than "any hour": a rain probability from
+    tomorrow afternoon must never end up answering "should I take an umbrella
+    now". Anything further out than the look-ahead window is discarded.
+    """
+    now = now or datetime.now(UTC)
+    horizon = now + timedelta(hours=HOURLY_LOOKAHEAD_HOURS)
+    best: dict[str, dict[str, Any]] = {}
+
+    for row in hourly_rows:
+        stamp = row.get("time_utc")
+        if not stamp:
+            continue
+        try:
+            moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if moment < now or moment > horizon:
+            continue
+        key = row.get("location_key", "")
+        current = best.get(key)
+        if current is None or moment < current["_moment"]:
+            best[key] = {**row, "_moment": moment}
+    return best
+
+
 def build_serving_payloads(
     current_rows: Sequence[dict[str, Any]],
     breach_rows: Sequence[dict[str, Any]],
+    hourly_rows: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Shape the small JSON files the public dashboard reads.
 
@@ -203,6 +243,7 @@ def build_serving_payloads(
     """
     flat = [_flatten_row(row) for row in _dedupe_rows(current_rows)]
     generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    upcoming = _next_hour_rain(hourly_rows)
 
     by_location: dict[str, list[dict[str, Any]]] = {}
     for row in flat:
@@ -227,6 +268,11 @@ def build_serving_payloads(
                 "uv": rows[-1].get("uv"),
                 "pm2_5": rows[-1].get("aqi_pm2_5"),
                 "us_epa_index": rows[-1].get("aqi_us_epa_index"),
+                # Feeds the advice engine's rain rule. Absent when no hourly
+                # forecast covers the look-ahead window, which the rule treats
+                # as "unknown" rather than "no rain".
+                "precip_chance_next_hour": (upcoming.get(key) or {}).get("chance_of_rain"),
+                "precip_forecast_hour_utc": (upcoming.get(key) or {}).get("time_utc"),
                 "observation_count_24h": len(rows),
             }
             for key, rows in sorted(by_location.items())
@@ -279,11 +325,46 @@ def _write_silver(rows: Sequence[dict[str, Any]], settings: Settings) -> str | N
     """
     if not rows:
         return None
-    day = datetime.now(UTC)
     blob_service = clients.get_blob_service(settings)
     container = blob_service.get_container_client(settings.storage.silver_container)
     flat = [_flatten_row(row) for row in _dedupe_rows(rows)]
 
+    # Partition by each row's own observation date and overwrite one file per
+    # day in place — NOT one file per curate run, and NOT keyed on now().
+    #
+    # curate runs hourly over a rolling 24h window that crosses midnight, so
+    # both a per-run filename and a now()-keyed daily filename leave the same
+    # observation written into more than one file: a reader pointed at
+    # `current/**` would then read it several times over. In-file de-duplication
+    # holds, cross-file de-duplication does not. Keying on the row's observation
+    # date means a given reading only ever lands in that day's file, which the
+    # latest write then owns outright.
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for row in flat:
+        observed = str(row.get("observed_at_utc") or "")[:10]  # YYYY-MM-DD
+        if observed:
+            by_day.setdefault(observed, []).append(row)
+
+    written_paths: list[str] = []
+    for observed_date, day_rows in sorted(by_day.items()):
+        body, extension = _encode_silver(day_rows)
+        path = f"current/date={observed_date}/current.{extension}"
+        container.upload_blob(name=path, data=body, overwrite=True)
+        written_paths.append(path)
+        logger.info("Wrote silver table %s (%d rows).", path, len(day_rows))
+
+    # The most recent day's file is the one callers care about (Power BI reads
+    # the whole `current/**` tree); returning it keeps the single-path contract.
+    return written_paths[-1] if written_paths else None
+
+
+def _encode_silver(rows: Sequence[dict[str, Any]]) -> tuple[bytes, str]:
+    """Serialise curated rows as Parquet, or CSV when pyarrow is unavailable.
+
+    A slim deployment without pyarrow should degrade to CSV rather than fail;
+    the curation step must not fall over because an optional dependency is
+    missing.
+    """
     try:
         import io
 
@@ -291,23 +372,18 @@ def _write_silver(rows: Sequence[dict[str, Any]], settings: Settings) -> str | N
         import pyarrow.parquet as pq
 
         buffer = io.BytesIO()
-        pq.write_table(pa.Table.from_pylist(flat), buffer, compression="snappy")
-        body, extension = buffer.getvalue(), "parquet"
+        pq.write_table(pa.Table.from_pylist(list(rows)), buffer, compression="snappy")
+        return buffer.getvalue(), "parquet"
     except ImportError:
         import csv
         import io
 
         logger.warning("pyarrow unavailable; writing the silver layer as CSV.")
         text = io.StringIO()
-        writer = csv.DictWriter(text, fieldnames=sorted({k for row in flat for k in row}))
+        writer = csv.DictWriter(text, fieldnames=sorted({k for row in rows for k in row}))
         writer.writeheader()
-        writer.writerows(flat)
-        body, extension = text.getvalue().encode("utf-8"), "csv"
-
-    path = f"current/date={day:%Y-%m-%d}/current-{day:%Y%m%dT%H%M%S}.{extension}"
-    container.upload_blob(name=path, data=body, overwrite=True)
-    logger.info("Wrote silver table %s (%d rows).", path, len(flat))
-    return path
+        writer.writerows(rows)
+        return text.getvalue().encode("utf-8"), "csv"
 
 
 def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
@@ -318,8 +394,9 @@ def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
 
     current_rows = read_bronze("current", hours=hours, settings=settings)
     breach_rows = read_bronze("threshold_breach", hours=hours, settings=settings)
+    hourly_rows = read_bronze("forecast_hour", hours=hours, settings=settings)
 
-    payloads = build_serving_payloads(current_rows, breach_rows)
+    payloads = build_serving_payloads(current_rows, breach_rows, hourly_rows)
     blob_service = clients.get_blob_service(settings)
     for path, payload in payloads.items():
         sinks.write_json_blob(
@@ -330,6 +407,7 @@ def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
     summary = {
         "bronze_current_rows": len(current_rows),
         "bronze_breach_rows": len(breach_rows),
+        "bronze_hourly_rows": len(hourly_rows),
         "serving_files": list(payloads),
         "silver_path": silver_path,
     }

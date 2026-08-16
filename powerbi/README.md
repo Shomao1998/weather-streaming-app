@@ -43,7 +43,8 @@ az role assignment create --assignee "$(az ad signed-in-user show --query id -o 
 
 ## Suggested model
 
-The silver table is already flat and de-duplicated, so no star schema is required for a report this
+The silver table is one file per day (overwritten hourly in place), already flat and
+de-duplicated across files, so no star schema is required for a report this
 size. Add a date table and mark it as such:
 
 ```dax

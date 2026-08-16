@@ -127,3 +127,43 @@ class TestDeduplicate:
 
         unique = transform.deduplicate([a, b, c])
         assert [r.record_id for r in unique] == [a.record_id, c.record_id]
+
+
+class TestForecastHourRecords:
+    """Hourly forecast — added so the advice engine can answer "is it about to
+    rain", which the daily `daily_chance_of_rain` cannot."""
+
+    NOW = datetime(2025, 8, 2, 0, 30, tzinfo=UTC)
+
+    def test_parses_the_hour_array(self, forecast_payload):
+        rows = transform.to_forecast_hour_records(forecast_payload, ingested_at=self.NOW)
+        assert [r.chance_of_rain for r in rows] == [10, 20, 85, 60, 30, 5]
+
+    def test_times_are_utc_iso(self, forecast_payload):
+        rows = transform.to_forecast_hour_records(forecast_payload, ingested_at=self.NOW)
+        assert rows[0].time_utc == "2025-08-02T00:00:00Z"
+
+    def test_the_window_bounds_how_much_is_kept(self, forecast_payload):
+        # The response holds 72 hours; keeping them all would quadruple ingest
+        # volume to serve a rule that only reads the next hour.
+        rows = transform.to_forecast_hour_records(
+            forecast_payload, ingested_at=self.NOW, hours_ahead=2
+        )
+        assert len(rows) == 3
+
+    def test_past_hours_are_dropped(self, forecast_payload):
+        later = datetime(2025, 8, 2, 3, 30, tzinfo=UTC)
+        rows = transform.to_forecast_hour_records(forecast_payload, ingested_at=later)
+        assert all(r.time_utc >= "2025-08-02T03:00:00Z" for r in rows)
+
+    def test_record_ids_are_deterministic(self, forecast_payload):
+        first = transform.to_forecast_hour_records(forecast_payload, ingested_at=self.NOW)
+        again = transform.to_forecast_hour_records(forecast_payload, ingested_at=self.NOW)
+        assert [r.record_id for r in first] == [r.record_id for r in again]
+
+    def test_a_response_without_hours_is_not_an_error(self, current_payload):
+        assert transform.to_forecast_hour_records(current_payload) == []
+
+    def test_record_type_is_tagged_for_the_lake(self, forecast_payload):
+        rows = transform.to_forecast_hour_records(forecast_payload, ingested_at=self.NOW)
+        assert rows[0].record_type == "forecast_hour"

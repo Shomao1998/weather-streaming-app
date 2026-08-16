@@ -28,8 +28,8 @@
 | **[v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)** | 确定性建议卡片。规则加模板——不用模型、不用检索。系统能说出的每一句话都是可审阅的固定字符串，`AdviceContentProvider` 就是 v1.2 接入的那道接缝。 | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
 | **[v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)** | 检索式生成建议。模型根据当前天气事实加检索到的官方指引来写措辞，并且必须标出出处；任何一条失败路径都回落到 v1.1 卡片。 | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
 
-`main` 是 v1.0 加上这一页导航。后续每个版本都是一个 tag，并有对应的 `release/*`
-分支；等订阅恢复到可部署状态后再合入 `main`。
+`main` 现在就是完整系统（v1.0 管道 + v1.1/v1.2 建议卡片），也是线上部署运行的版本。
+每个版本仍保留一个 tag 和对应的 `release/*` 分支，方便按步骤对照演进。
 
 ---
 
@@ -71,7 +71,7 @@ syslog。最初提议以 Azure 存储服务承载日志，并用 Application Ins
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-zh-dark.svg">
-    <img src="docs/images/architecture-zh-light.svg" alt="管道架构：weatherapi.com 经两个定时函数写入 Event Hubs；archive_to_bronze 将流排空到 bronze 层；curate 每小时加工出 silver Parquet 与 serving JSON；serving 经 HTTP API 供给 Static Web App 看板，silver 供给 Power BI；阈值突破进入 Application Insights 并触发 Azure Monitor 告警规则。下方是 v1.1 与 v1.2 标签上的部分：api_advice 读取同一份 serving 快照与一份带版本的知识索引，可选调用 Azure OpenAI 与 Azure AI Search，最后把卡片返回看板。" width="560">
+    <img src="docs/images/architecture-zh-light.svg" alt="管道架构：weatherapi.com 经两个定时函数写入 Event Hubs；archive_to_bronze 将流排空到 bronze 层；curate 每小时加工出 silver Parquet 与 serving JSON；serving 经 HTTP API 供给 Static Web App 看板，silver 供给 Power BI；阈值突破进入 Application Insights 并触发 Azure Monitor 告警规则。下方 api_advice 读取同一份 serving 快照与一份带版本的知识索引，可选调用 Azure OpenAI 与 Azure AI Search，最后把卡片返回看板。" width="560">
   </picture>
 </p>
 
@@ -152,9 +152,10 @@ Event Hubs、Storage 和 Key Vault 全部通过标识访问。
 
 回应上面那第三个需求的卡片。它位于看板顶部，只在条件满足时才出现，且从不阻塞天气本身。
 
-**这部分代码在 [v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)
+它分两步交付，打了 [v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)
 和 [v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)
-两个标签上，不在 `main` 上**——等订阅恢复到可部署状态后再合入。
+两个标签，现已合入 `main`——所以这就是线上部署运行的代码。卡片只在规则触发时出现；
+配置了 Azure OpenAI 时走检索式措辞，否则回落到 v1.1 模板。
 
 ### v1.1 —— 规则加模板，不用模型
 

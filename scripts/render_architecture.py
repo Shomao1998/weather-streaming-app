@@ -156,8 +156,8 @@ GROUPS = [
     Group(55, 140, 355, 118, "Ingestion", "采集"),
     Group(470, 155, 240, 285, "Monitoring", "监控"),
     Group(55, 585, 675, 118, "ADLS Gen2 — data lake", "ADLS Gen2 数据湖"),
-    Group(55, 1010, 675, 200, "Advice cards — on the v1.1 and v1.2 tags",
-          "建议卡片 —— 在 v1.1 与 v1.2 标签上"),
+    Group(55, 1010, 675, 200, "Advice cards — v1.1 rules, v1.2 retrieval",
+          "建议卡片 —— v1.1 规则，v1.2 检索"),
 ]
 
 EDGES = [

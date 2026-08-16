@@ -30,9 +30,9 @@ story of that step and nothing else.
 | **[v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)** | Deterministic advice cards. Rules and templates — no model, no retrieval. Every sentence the system can emit is a reviewable string, and `AdviceContentProvider` is the seam v1.2 slots into. | [`docs/advice.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.1/docs/advice.md) |
 | **[v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)** | Retrieval-grounded advice. A model writes the copy from live weather facts plus retrieved official guidance, and must cite the passage it came from. Every failure path returns a v1.1 card. | [`docs/rag.md`](https://github.com/Shomao1998/weather-streaming-app/blob/v1.2/docs/rag.md) |
 
-`main` carries v1.0 plus this page. Each later version is a tag, with a
-matching `release/*` branch; they are merged into `main` once the
-subscription can deploy again.
+`main` is now the whole system (the v1.0 pipeline plus the v1.1/v1.2 advice
+cards) and is what the live deployment runs. Each version still keeps a tag and
+a matching `release/*` branch, so the progression stays readable step by step.
 
 ---
 
@@ -82,7 +82,7 @@ Weather data substitutes for logs because the two share three properties:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
-    <img src="docs/images/architecture-light.svg" alt="Pipeline architecture: weatherapi.com feeds two timer functions into Event Hubs; archive_to_bronze drains the stream into a bronze layer; curate runs hourly into silver Parquet and serving JSON; serving is exposed through an HTTP API to a Static Web App dashboard, silver goes to Power BI; threshold breaches flow to Application Insights and on to Azure Monitor alert rules. Below, on the v1.1 and v1.2 tags, api_advice reads the same serving snapshot plus a versioned knowledge index, optionally calls Azure OpenAI and Azure AI Search, and returns a card to the dashboard." width="560">
+    <img src="docs/images/architecture-light.svg" alt="Pipeline architecture: weatherapi.com feeds two timer functions into Event Hubs; archive_to_bronze drains the stream into a bronze layer; curate runs hourly into silver Parquet and serving JSON; serving is exposed through an HTTP API to a Static Web App dashboard, silver goes to Power BI; threshold breaches flow to Application Insights and on to Azure Monitor alert rules. Below, api_advice reads the same serving snapshot plus a versioned knowledge index, optionally calls Azure OpenAI and Azure AI Search, and returns a card to the dashboard." width="560">
   </picture>
 </p>
 
@@ -173,9 +173,11 @@ and the alert rules query them. Logging is the alerting transport, so no extra s
 The card that answers the third requirement above. It sits at the top of the
 dashboard, fires only when a condition is met, and never blocks the weather.
 
-**The code for this lives on the [v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)
+It shipped in two steps, tagged [v1.1](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.1)
 and [v1.2](https://github.com/Shomao1998/weather-streaming-app/releases/tag/v1.2)
-tags, not on `main`** — they are merged once the subscription can deploy again.
+and now merged into `main` — so this is what the live deployment runs. A card
+only appears when a rule fires; retrieval-backed wording is on when Azure
+OpenAI is configured, and falls back to the v1.1 template otherwise.
 
 ### v1.1 — rules and templates, no model
 

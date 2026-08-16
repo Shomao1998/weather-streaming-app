@@ -16,6 +16,7 @@ Python worker introspects it to discover functions:
   reports *zero* functions — including every unrelated one in this file.
 """
 
+import hashlib
 import json
 import logging
 from typing import List
@@ -23,6 +24,8 @@ from typing import List
 import azure.functions as func
 
 from weather import pipeline, serving
+from weather.advice import AdviceService, InvalidLocation, new_session_id
+from weather.advice import factory as advice_factory
 from weather.config import ConfigError, get_settings
 
 app = func.FunctionApp()
@@ -139,6 +142,119 @@ def api_timeseries(req: func.HttpRequest) -> func.HttpResponse:
 def api_breaches(req: func.HttpRequest) -> func.HttpResponse:
     """Recent threshold breaches, newest first."""
     return _serve(pipeline.SERVING_BREACHES_BLOB)
+
+
+SESSION_HEADER = "X-Advice-Session"
+
+# A question is a retrieval hint, not an input channel. Bounding it keeps
+# prompt size predictable and leaves no room for pasted instructions.
+MAX_QUESTION_CHARS = 200
+
+
+def _session_id(req: func.HttpRequest) -> str:
+    """An anonymous id the client keeps for its browser session.
+
+    Generated server-side when absent so a first-time caller still gets
+    consistent frequency control; nothing else about the caller is recorded.
+    """
+    return (
+        req.headers.get(SESSION_HEADER)
+        or req.params.get("session")
+        or new_session_id()
+    )
+
+
+@app.function_name(name="api_advice")
+@app.route(route="api/advice", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_advice(req: func.HttpRequest) -> func.HttpResponse:
+    """At most one advice card for a location, or 204 when there is nothing to say.
+
+    Every failure mode here degrades to "no card". The dashboard asks for
+    advice *after* it has already rendered the weather, and nothing in this
+    handler is allowed to make that page worse.
+
+    `q` is an optional free-text question. It only ever influences wording and
+    which passages are retrieved — never whether a card appears, which trigger
+    fires, or how severe it is. Those stay with the rule engine, so a question
+    cannot talk the system into downplaying a hazard.
+    """
+    location = (req.params.get("location") or "").strip()
+    if not location:
+        return _json_response({"error": "location is required"}, 400)
+
+    question = (req.params.get("q") or "").strip()
+    if len(question) > MAX_QUESTION_CHARS:
+        return _json_response(
+            {"error": f"q must be at most {MAX_QUESTION_CHARS} characters"}, 400
+        )
+
+    session_id = _session_id(req)
+    try:
+        snapshot = serving.read_serving_document(pipeline.SERVING_LATEST_BLOB)
+    except serving.ServingDataUnavailable:
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+    except Exception:
+        logger.exception("Advice: could not read the weather snapshot.")
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+
+    try:
+        result = AdviceService(provider=advice_factory.get_provider()).build(
+            snapshot, location, session_id, question=question or None
+        )
+    except InvalidLocation:
+        return _json_response(
+            {"error": f"unknown location '{location}'"}, 400
+        )
+    except Exception:
+        logger.exception("Advice: evaluation failed.")
+        return func.HttpResponse(status_code=204, headers={SESSION_HEADER: session_id})
+
+    if not result.has_card:
+        return func.HttpResponse(
+            status_code=204,
+            headers={SESSION_HEADER: session_id, "X-Advice-Outcome": str(result.outcome)},
+        )
+
+    card = result.card.to_dict()
+    response = _json_response(card)
+    response.headers[SESSION_HEADER] = session_id
+    # Cacheable, but never past the card's own expiry, and never across a new
+    # snapshot: the recommendation id changes when the observation does. The
+    # question is folded in because two questions against the same snapshot
+    # produce the same recommendation id but different copy.
+    response.headers["Cache-Control"] = "private, max-age=60"
+    etag_seed = card["recommendation_id"]
+    if question:
+        etag_seed += ":" + hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
+    response.headers["ETag"] = f'"{etag_seed}"'
+    return response
+
+
+@app.function_name(name="api_advice_feedback")
+@app.route(
+    route="api/advice/feedback", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS
+)
+def api_advice_feedback(req: func.HttpRequest) -> func.HttpResponse:
+    """Record one interaction with a card. Mutes are the only event that
+    changes future behaviour; the rest exist to measure whether this feature
+    is worth keeping."""
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return _json_response({"error": "body must be JSON"}, 400)
+    if not isinstance(payload, dict):
+        return _json_response({"error": "body must be a JSON object"}, 400)
+
+    payload.setdefault("session_id", _session_id(req))
+    try:
+        AdviceService().record_feedback(payload)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except Exception:
+        logger.exception("Advice: feedback could not be recorded.")
+        return func.HttpResponse(status_code=202)
+
+    return func.HttpResponse(status_code=202)
 
 
 @app.function_name(name="health")
