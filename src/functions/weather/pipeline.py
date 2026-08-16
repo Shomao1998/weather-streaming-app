@@ -325,11 +325,46 @@ def _write_silver(rows: Sequence[dict[str, Any]], settings: Settings) -> str | N
     """
     if not rows:
         return None
-    day = datetime.now(UTC)
     blob_service = clients.get_blob_service(settings)
     container = blob_service.get_container_client(settings.storage.silver_container)
     flat = [_flatten_row(row) for row in _dedupe_rows(rows)]
 
+    # Partition by each row's own observation date and overwrite one file per
+    # day in place — NOT one file per curate run, and NOT keyed on now().
+    #
+    # curate runs hourly over a rolling 24h window that crosses midnight, so
+    # both a per-run filename and a now()-keyed daily filename leave the same
+    # observation written into more than one file: a reader pointed at
+    # `current/**` would then read it several times over. In-file de-duplication
+    # holds, cross-file de-duplication does not. Keying on the row's observation
+    # date means a given reading only ever lands in that day's file, which the
+    # latest write then owns outright.
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for row in flat:
+        observed = str(row.get("observed_at_utc") or "")[:10]  # YYYY-MM-DD
+        if observed:
+            by_day.setdefault(observed, []).append(row)
+
+    written_paths: list[str] = []
+    for observed_date, day_rows in sorted(by_day.items()):
+        body, extension = _encode_silver(day_rows)
+        path = f"current/date={observed_date}/current.{extension}"
+        container.upload_blob(name=path, data=body, overwrite=True)
+        written_paths.append(path)
+        logger.info("Wrote silver table %s (%d rows).", path, len(day_rows))
+
+    # The most recent day's file is the one callers care about (Power BI reads
+    # the whole `current/**` tree); returning it keeps the single-path contract.
+    return written_paths[-1] if written_paths else None
+
+
+def _encode_silver(rows: Sequence[dict[str, Any]]) -> tuple[bytes, str]:
+    """Serialise curated rows as Parquet, or CSV when pyarrow is unavailable.
+
+    A slim deployment without pyarrow should degrade to CSV rather than fail;
+    the curation step must not fall over because an optional dependency is
+    missing.
+    """
     try:
         import io
 
@@ -337,23 +372,18 @@ def _write_silver(rows: Sequence[dict[str, Any]], settings: Settings) -> str | N
         import pyarrow.parquet as pq
 
         buffer = io.BytesIO()
-        pq.write_table(pa.Table.from_pylist(flat), buffer, compression="snappy")
-        body, extension = buffer.getvalue(), "parquet"
+        pq.write_table(pa.Table.from_pylist(list(rows)), buffer, compression="snappy")
+        return buffer.getvalue(), "parquet"
     except ImportError:
         import csv
         import io
 
         logger.warning("pyarrow unavailable; writing the silver layer as CSV.")
         text = io.StringIO()
-        writer = csv.DictWriter(text, fieldnames=sorted({k for row in flat for k in row}))
+        writer = csv.DictWriter(text, fieldnames=sorted({k for row in rows for k in row}))
         writer.writeheader()
-        writer.writerows(flat)
-        body, extension = text.getvalue().encode("utf-8"), "csv"
-
-    path = f"current/date={day:%Y-%m-%d}/current-{day:%Y%m%dT%H%M%S}.{extension}"
-    container.upload_blob(name=path, data=body, overwrite=True)
-    logger.info("Wrote silver table %s (%d rows).", path, len(flat))
-    return path
+        writer.writerows(rows)
+        return text.getvalue().encode("utf-8"), "csv"
 
 
 def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:

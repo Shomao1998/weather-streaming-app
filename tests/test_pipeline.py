@@ -241,3 +241,105 @@ class TestNextHourRain:
         # Null means "unknown"; zero would mean "definitely dry", and the rule
         # treats those very differently.
         assert location["precip_chance_next_hour"] is None
+
+
+class _FakeContainer:
+    """Captures silver writes so a test can inspect blob names and overwrites.
+
+    Mimics the one method _write_silver calls. `overwrite=True` replaces an
+    existing name in place, which is exactly the property the idempotent-file
+    fix relies on.
+    """
+
+    def __init__(self):
+        self.blobs: dict[str, bytes] = {}
+        self.write_count = 0
+
+    def upload_blob(self, name, data, overwrite=False):
+        if name in self.blobs and not overwrite:
+            raise FileExistsError(name)
+        self.blobs[name] = data
+        self.write_count += 1
+
+
+class _FakeBlobService:
+    def __init__(self, container):
+        self._container = container
+
+    def get_container_client(self, _name):
+        return self._container
+
+
+class TestSilverIsIdempotent:
+    """The bug this guards: curate runs hourly over a rolling 24h window, so a
+    filename that varied per run left each observation duplicated across many
+    files. A reader over `current/**` would then read it many times over."""
+
+    def _record(self, current_payload, epoch, temp):
+        current_payload["current"]["last_updated_epoch"] = epoch
+        current_payload["current"]["temp_c"] = temp
+        return transform.to_current_record(current_payload).to_dict()
+
+    def test_one_file_per_observation_date_overwritten_in_place(
+        self, monkeypatch, local_settings, current_payload
+    ):
+        container = _FakeContainer()
+        monkeypatch.setattr(
+            pipeline.clients, "get_blob_service",
+            lambda settings=None: _FakeBlobService(container),
+        )
+
+        # Two observations on 2026-08-15, one on 2026-08-16 (UTC).
+        d15 = int(datetime(2026, 8, 15, 6, 0, tzinfo=UTC).timestamp())
+        d16 = int(datetime(2026, 8, 16, 6, 0, tzinfo=UTC).timestamp())
+        rows = [
+            self._record(current_payload, d15, 30.0),
+            self._record(current_payload, d15 + 900, 31.0),
+            self._record(current_payload, d16, 26.0),
+        ]
+
+        pipeline._write_silver(rows, local_settings)
+
+        # Exactly one file per observation date — not per run, not per record.
+        assert set(container.blobs) == {
+            "current/date=2026-08-15/current.parquet",
+            "current/date=2026-08-16/current.parquet",
+        }
+
+    def test_a_second_curate_overwrites_rather_than_accumulates(
+        self, monkeypatch, local_settings, current_payload
+    ):
+        container = _FakeContainer()
+        monkeypatch.setattr(
+            pipeline.clients, "get_blob_service",
+            lambda settings=None: _FakeBlobService(container),
+        )
+        epoch = int(datetime(2026, 8, 16, 6, 0, tzinfo=UTC).timestamp())
+        rows = [self._record(current_payload, epoch, 26.0)]
+
+        pipeline._write_silver(rows, local_settings)
+        pipeline._write_silver(rows, local_settings)  # next hour, same window
+
+        # Two curate runs, still one file for that day: the second overwrote
+        # the first instead of adding current-<timestamp2>.parquet beside it.
+        assert list(container.blobs) == ["current/date=2026-08-16/current.parquet"]
+        assert container.write_count == 2  # both writes happened, to the same name
+
+    def test_a_row_without_an_observation_time_is_dropped_not_misfiled(
+        self, monkeypatch, local_settings, current_payload
+    ):
+        container = _FakeContainer()
+        monkeypatch.setattr(
+            pipeline.clients, "get_blob_service",
+            lambda settings=None: _FakeBlobService(container),
+        )
+        good = self._record(
+            current_payload, int(datetime(2026, 8, 16, tzinfo=UTC).timestamp()), 26.0
+        )
+        bad = {**good, "observed_at_utc": None}
+
+        pipeline._write_silver([good, bad], local_settings)
+
+        # A dateless row must not create a `current/date=/current.parquet`
+        # bucket; it is left out rather than filed under an empty partition.
+        assert list(container.blobs) == ["current/date=2026-08-16/current.parquet"]

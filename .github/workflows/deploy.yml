@@ -30,8 +30,42 @@ env:
   RESOURCE_GROUP: rg-weather-streaming
 
 jobs:
+  # Nothing deploys until the same checks CI runs pass here. The two workflows
+  # were previously independent — a red CI run did not stop a deploy — so this
+  # gate is duplicated deliberately rather than pulled in via workflow_run,
+  # whose "runs on the default branch's definition" semantics are a trap. The
+  # cost is one extra test run; the benefit is that a broken commit cannot
+  # reach production.
+  test:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            src/functions/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q
+      - name: Knowledge index is not stale
+        run: python scripts/ingest_knowledge.py --check --offline
+      - name: Retrieval evaluation
+        run: python evals/run_retrieval_eval.py --fail-under 0.95
+      - name: Generation evaluation
+        run: python evals/run_generation_eval.py
+
   infrastructure:
     name: Infrastructure
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       functionAppName: ${{ steps.resolve.outputs.functionAppName }}
