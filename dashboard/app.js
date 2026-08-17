@@ -40,6 +40,10 @@
     metric: "temp_c",
     timeseries: null,
     adviceId: null,
+    // "welcome" (idle) or "card" (a live advice card is showing). Lets a poll
+    // that finds calm weather return a card to the welcome state without
+    // stomping a welcome the user is already reading.
+    adviceMode: "welcome",
     // Remembered so a follow-up question re-queries the same location the
     // card was built for.
     adviceLocation: null,
@@ -119,11 +123,57 @@
     HIGH_WIND: "\ud83c\udf2c",
   };
 
-  function clearAdvice() {
+  // The assistant panel is permanent. When there is nothing to advise it shows
+  // a welcome, not nothing — that is the whole point of pinning it. An optional
+  // reply is passed after the user asks something in calm weather, so the input
+  // never leads to silence.
+  function renderWelcome(replyText) {
     var slot = el("advice-slot");
+    var wrap = document.createElement("div");
+    wrap.className = "assistant-welcome";
+    wrap.innerHTML =
+      '<div class="assistant-welcome__row">' +
+      '<div class="assistant-welcome__icon">🌤️</div>' +
+      "<div>" +
+      '<p class="assistant-welcome__title">欢迎来到天气看板</p>' +
+      '<p class="assistant-welcome__text">今天有什么安排吗？让我帮你看看该准备什么。</p>' +
+      "</div></div>" +
+      (replyText
+        ? '<p class="assistant-welcome__reply">' + escapeHtml(replyText) + "</p>"
+        : "");
+    wrap.appendChild(questionForm());
     slot.innerHTML = "";
-    slot.hidden = true;
+    slot.appendChild(wrap);
+    slot.hidden = false;
     state.adviceId = null;
+    state.adviceMode = "welcome";
+  }
+
+  // Kept for the dismiss/mute handlers: a dismissed card returns the panel to
+  // its welcome state rather than hiding it.
+  function clearAdvice() {
+    renderWelcome();
+  }
+
+  // A shared input, usable from the welcome state and from a grounded card.
+  // Submitting routes through refreshAdvice with the question flag set.
+  function questionForm() {
+    var form = document.createElement("form");
+    form.className = "advice__ask";
+    form.innerHTML =
+      '<input class="advice__ask-input" type="text" maxlength="200" ' +
+      'placeholder="例如：下午要出门，需要带伞吗" ' +
+      'aria-label="向天气助手提问">' +
+      '<button class="advice__ask-button" type="submit">问</button>';
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var input = form.querySelector(".advice__ask-input");
+      var question = (input.value || "").trim();
+      if (!question) return;
+      input.disabled = true;
+      refreshAdvice(state.adviceLocation, question, true);
+    });
+    return form;
   }
 
   function sourcesHtml(sources) {
@@ -147,29 +197,6 @@
       .join("");
 
     return '<p class="advice__sources"><span>依据：</span>' + links + "</p>";
-  }
-
-  function questionBox(card) {
-    var form = document.createElement("form");
-    form.className = "advice__ask";
-    form.innerHTML =
-      '<input class="advice__ask-input" type="text" maxlength="200" ' +
-      'placeholder="想问点什么？例如：中午可以跑步吗" ' +
-      'aria-label="就这条天气建议提问">' +
-      '<button class="advice__ask-button" type="submit">问</button>';
-
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      var input = form.querySelector(".advice__ask-input");
-      var question = (input.value || "").trim();
-      if (!question) return;
-      // The answer replaces this card in place. The question changes only the
-      // wording and the citations; whether a card exists at all, and how
-      // severe it is, was already decided server-side by the rules.
-      input.disabled = true;
-      refreshAdvice(state.adviceLocation, question);
-    });
-    return form;
   }
 
   function renderAdvice(card) {
@@ -212,10 +239,10 @@
       "</div>";
 
     if (card.sources && card.sources.length) {
-      // Only offered when the card was grounded in retrieved guidance: asking
-      // a template a question would do nothing, and an input that does nothing
-      // is worse than no input.
-      wrapper.querySelector(".advice__body").appendChild(questionBox(card));
+      // A follow-up input is only offered on a grounded card, because only the
+      // retrieval path can act on the question. On a template card it would do
+      // nothing, and an input that does nothing is worse than none.
+      wrapper.querySelector(".advice__body").appendChild(questionForm());
     }
 
     var actions = wrapper.querySelector(".advice__actions");
@@ -236,10 +263,17 @@
     slot.appendChild(wrapper);
     slot.hidden = false;
     state.adviceId = card.recommendation_id;
+    state.adviceMode = "card";
     sendFeedback(card, "shown");
   }
 
-  function refreshAdvice(location, question) {
+  // Shown after the user asks in calm weather. Not tailored — the backend only
+  // produces advice when a rule fires — but honest, and never silence. (Free
+  // -form answers in calm weather are the RAG assistant, deferred; see README.)
+  var CALM_REPLY =
+    "现在天气平稳，没有需要特别准备的。等出现高温、大风、强紫外线或降雨，我会在这里提醒你该带什么。";
+
+  function refreshAdvice(location, question, fromAsk) {
     if (!ENDPOINTS.advice || !location) return;
     state.adviceLocation = location;
 
@@ -254,28 +288,44 @@
         (question ? "&q=" + encodeURIComponent(question) : "")
       : ENDPOINTS.advice;
 
+    // "Nothing to advise" — either 204 from the live API or a null card offline.
+    var showNoCard = function () {
+      if (fromAsk) {
+        // The user just asked: answer, even if the answer is "all clear".
+        renderWelcome(CALM_REPLY);
+      } else if (state.adviceMode === "card") {
+        // A card was showing and the weather has calmed: return to welcome.
+        renderWelcome();
+      }
+      // Otherwise we are already in the welcome state — leave it, so a poll
+      // does not wipe a reply the user is reading or text they are typing.
+    };
+
     fetch(url, { cache: "no-store" })
       .then(function (response) {
-        if (response.status === 204) {
-          clearAdvice();
-          return null;
-        }
+        if (response.status === 204) return { none: true };
         if (!response.ok) return null;
         return response.json();
       })
       .then(function (payload) {
-        if (!payload) return;
+        if (payload === null) return; // transient error: leave the panel as-is
         // Offline the document wraps the card so "no advice" is representable.
-        var card = payload.card !== undefined ? payload.card : payload;
+        var card = payload.none ? null : payload.card !== undefined ? payload.card : payload;
         if (!card) {
-          clearAdvice();
+          showNoCard();
           return;
         }
         // Re-rendering an identical card on every poll is what makes this kind
         // of feature feel like a popup. Same id means leave the DOM alone.
-        if (!question && card.recommendation_id === state.adviceId) return;
-        if (dismissed().indexOf(card.recommendation_id) !== -1) return;
-        if (parseTime(card.expires_at_utc) && parseTime(card.expires_at_utc) < new Date()) return;
+        if (!fromAsk && card.recommendation_id === state.adviceId) return;
+        if (dismissed().indexOf(card.recommendation_id) !== -1) {
+          showNoCard();
+          return;
+        }
+        if (parseTime(card.expires_at_utc) && parseTime(card.expires_at_utc) < new Date()) {
+          showNoCard();
+          return;
+        }
         renderAdvice(card);
       })
       .catch(function () {
@@ -713,6 +763,10 @@
     // The SVG scales itself; only the legend needs re-flowing, which the
     // browser handles. Kept as a hook for future responsive tick logic.
   });
+
+  // Show the welcome immediately, so the assistant panel is never empty while
+  // the first weather fetch is in flight.
+  renderWelcome();
 
   refresh();
   setInterval(refresh, REFRESH_MS);

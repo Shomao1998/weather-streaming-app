@@ -35,8 +35,11 @@
     </header>
 
     <main id="main">
-      <section id="advice-slot" aria-live="polite" hidden></section>
+      <aside class="assistant" aria-label="Weather assistant">
+        <section id="advice-slot" class="assistant__slot" aria-live="polite"></section>
+      </aside>
 
+      <div class="main__content">
       <section aria-labelledby="conditions-heading">
         <div class="section-head">
           <h2 id="conditions-heading">Current conditions</h2>
@@ -84,6 +87,7 @@
           <p class="empty">Loading…</p>
         </div>
       </section>
+      </div>
     </main>
 
     <footer class="footer">
