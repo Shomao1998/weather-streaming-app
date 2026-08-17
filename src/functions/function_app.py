@@ -23,7 +23,7 @@ from typing import List
 
 import azure.functions as func
 
-from weather import assistant, pipeline, serving
+from weather import assistant, assistant_chat, assistant_guard, pipeline, serving
 from weather.advice import AdviceService, InvalidLocation, new_session_id
 from weather.advice import factory as advice_factory
 from weather.config import ConfigError, get_settings
@@ -278,8 +278,23 @@ def api_ask(req: func.HttpRequest) -> func.HttpResponse:
     if entry is None:
         return _json_response({"error": f"unknown location '{location}'"}, 400)
 
+    name = entry.get("name") or location
+
+    # The paid chat layer runs first when it is enabled and within budget; it
+    # only ever makes the answer nicer. Anything it cannot do — disabled, over
+    # budget, a model error, output that does not validate — returns None, and
+    # the free deterministic answer takes over. A question never fails because
+    # of the paid path.
     try:
-        result = assistant.answer(entry, entry.get("name") or location, question)
+        settings = get_settings()
+        if settings.rag.enabled:
+            chat = assistant_chat.chat_answer(
+                entry, name, question, settings,
+                assistant_guard.get_guard(settings), _session_id(req),
+            )
+            result = chat if chat is not None else assistant.answer(entry, name, question)
+        else:
+            result = assistant.answer(entry, name, question)
     except Exception:
         logger.exception("Ask: answering failed.")
         return _json_response(
@@ -287,7 +302,7 @@ def api_ask(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     response = _json_response(result.to_dict())
-    response.headers["Cache-Control"] = "public, max-age=60"
+    response.headers["Cache-Control"] = "no-store"  # a paid answer is per-request
     return response
 
 
