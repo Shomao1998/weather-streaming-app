@@ -130,6 +130,26 @@ def _retrieve_guidance(question: str, entry: dict[str, Any]) -> list[Any]:
     return [r.chunk for r in results if not r.chunk.content.lstrip().startswith("Source:")][:2]
 
 
+def _answer_language(question: str) -> str:
+    """Which language the answer must be in — decided deterministically, not
+    left to the model. Any CJK character means Chinese; otherwise English. The
+    all-Chinese system prompt biases the model toward Chinese, so an English
+    question needs an explicit instruction to be answered in English."""
+    for ch in question:
+        if "一" <= ch <= "鿿" or "぀" <= ch <= "ヿ":
+            return "zh"
+    return "en"
+
+
+_LANGUAGE_DIRECTIVE = {
+    "zh": "RESPONSE_LANGUAGE\n必须用中文回答。",
+    "en": (
+        "RESPONSE_LANGUAGE\nAnswer in English only, even though the "
+        "instructions above are in Chinese."
+    ),
+}
+
+
 def _build_user_prompt(question: str, facts: dict[str, Any], passages: list[Any]) -> str:
     guidance = [
         {"chunk_id": p.chunk_id, "authority": p.authority, "text": p.content[:700]}
@@ -139,6 +159,7 @@ def _build_user_prompt(question: str, facts: dict[str, Any], passages: list[Any]
         "AVAILABLE_CITIES\n" + json.dumps(list(AVAILABLE_CITIES), ensure_ascii=False)
         + "\n\nWEATHER_DATA\n" + json.dumps(facts, ensure_ascii=False)
         + "\n\nRETRIEVED_GUIDANCE\n" + json.dumps(guidance, ensure_ascii=False)
+        + "\n\n" + _LANGUAGE_DIRECTIVE[_answer_language(question)]
         + "\n\nQUESTION\n" + question
     )
 

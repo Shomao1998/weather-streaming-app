@@ -85,6 +85,31 @@ def test_no_city_named_falls_back_to_the_default_location():
     assert function_app._city_in_question(_SNAPSHOT, "明天会下雨吗") is None
 
 
+# -- answer language follows the question -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("question", "lang"),
+    [
+        ("大阪明天会下雨吗", "zh"),
+        ("do I need an umbrella in osaka tomorrow", "en"),
+        ("osaka 明天下雨吗", "zh"),  # any CJK → Chinese
+    ],
+)
+def test_answer_language_is_decided_from_the_question(question, lang):
+    from weather import assistant_chat
+
+    assert assistant_chat._answer_language(question) == lang
+
+
+def test_english_question_gets_an_explicit_english_directive():
+    from weather import assistant_chat
+
+    facts = {"city": "Osaka-Shi", "current": {}, "forecast": []}
+    prompt = assistant_chat._build_user_prompt("umbrella in osaka?", facts, [])
+    assert "Answer in English only" in prompt
+
+
 def test_deployment_package_has_host_json_at_its_root():
     # host.json one directory below the package root is exactly what broke the
     # previous deployment.
