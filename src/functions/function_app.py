@@ -23,7 +23,7 @@ from typing import List
 
 import azure.functions as func
 
-from weather import pipeline, serving
+from weather import assistant, pipeline, serving
 from weather.advice import AdviceService, InvalidLocation, new_session_id
 from weather.advice import factory as advice_factory
 from weather.config import ConfigError, get_settings
@@ -227,6 +227,67 @@ def api_advice(req: func.HttpRequest) -> func.HttpResponse:
     if question:
         etag_seed += ":" + hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
     response.headers["ETag"] = f'"{etag_seed}"'
+    return response
+
+
+def _find_location(snapshot: dict, location: str) -> dict | None:
+    wanted = location.strip().casefold()
+    for entry in snapshot.get("locations", []):
+        name = str(entry.get("name") or "").casefold()
+        key = str(entry.get("location_key") or "").casefold()
+        if wanted in (name, key):
+            return entry
+    return None
+
+
+@app.function_name(name="api_ask")
+@app.route(route="api/ask", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def api_ask(req: func.HttpRequest) -> func.HttpResponse:
+    """Answer a free-text weather question, deterministically and for free.
+
+    Distinct from ``/api/advice``: that endpoint shows a card the rules decided
+    to raise; this one answers what the user actually asked. A forecast
+    question is a data lookup over the served forecast; anything else gets an
+    honest statement of what can be answered. No model, no external call.
+    """
+    location = (req.params.get("location") or "").strip()
+    if not location:
+        return _json_response({"error": "location is required"}, 400)
+
+    question = (req.params.get("q") or "").strip()
+    if not question:
+        return _json_response({"error": "q is required"}, 400)
+    if len(question) > MAX_QUESTION_CHARS:
+        return _json_response(
+            {"error": f"q must be at most {MAX_QUESTION_CHARS} characters"}, 400
+        )
+
+    try:
+        snapshot = serving.read_serving_document(pipeline.SERVING_LATEST_BLOB)
+    except serving.ServingDataUnavailable:
+        return _json_response(
+            {"kind": "unknown", "message": "天气数据暂时不可用，稍后再试。"}, 503
+        )
+    except Exception:
+        logger.exception("Ask: could not read the weather snapshot.")
+        return _json_response(
+            {"kind": "unknown", "message": "天气数据暂时不可用，稍后再试。"}, 503
+        )
+
+    entry = _find_location(snapshot, location)
+    if entry is None:
+        return _json_response({"error": f"unknown location '{location}'"}, 400)
+
+    try:
+        result = assistant.answer(entry, entry.get("name") or location, question)
+    except Exception:
+        logger.exception("Ask: answering failed.")
+        return _json_response(
+            {"kind": "unknown", "message": "没能处理这个问题，换个说法再试试。"}
+        )
+
+    response = _json_response(result.to_dict())
+    response.headers["Cache-Control"] = "public, max-age=60"
     return response
 
 

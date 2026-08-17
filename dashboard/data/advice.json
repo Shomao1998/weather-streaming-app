@@ -1,6 +1,6 @@
 {
   "card": {
-    "recommendation_id": "5a33fc6f87ea432d9018d5c44a90b770",
+    "recommendation_id": "ac96aa455d14806c748e1045e1b9f6d4",
     "location": "Tokyo",
     "trigger_code": "RAIN_EXPECTED",
     "severity": "info",
@@ -12,11 +12,11 @@
         "value": "85%"
       }
     ],
-    "weather_observed_at_utc": "2026-08-05T06:27:00Z",
-    "generated_at_utc": "2026-08-05T06:27:52.506074Z",
-    "expires_at_utc": "2026-08-05T07:27:52.506074Z",
+    "weather_observed_at_utc": "2026-08-17T04:34:00Z",
+    "generated_at_utc": "2026-08-17T04:34:24.004173Z",
+    "expires_at_utc": "2026-08-17T05:34:24.004173Z",
     "generation_method": "rag-v1",
-    "weather_snapshot_id": "28eea81cb3a3c443",
+    "weather_snapshot_id": "a69b2c010f454544",
     "rule_version": "2026-08-04",
     "sources": [
       {

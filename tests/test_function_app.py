@@ -26,6 +26,7 @@ EXPECTED = {
     "api_breaches": "httpTrigger",
     "api_advice": "httpTrigger",
     "api_advice_feedback": "httpTrigger",
+    "api_ask": "httpTrigger",
     "health": "httpTrigger",
 }
 

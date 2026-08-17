@@ -17,6 +17,7 @@
         timeseries: API_BASE + "/api/timeseries",
         breaches: API_BASE + "/api/breaches",
         advice: API_BASE + "/api/advice",
+        ask: API_BASE + "/api/ask",
         feedback: API_BASE + "/api/advice/feedback",
       }
     : {
@@ -24,6 +25,7 @@
         timeseries: "./data/timeseries_24h.json",
         breaches: "./data/breaches_24h.json",
         advice: "./data/advice.json",
+        ask: null,
         feedback: null,
       };
 
@@ -149,20 +151,71 @@
     state.adviceMode = "welcome";
   }
 
+  // The answer to a user's question, from /api/ask: a forecast readout, or an
+  // honest "here's what I can answer". Rendered into the same panel, with the
+  // input kept so the next question is one tap away.
+  function renderAnswer(payload) {
+    var slot = el("advice-slot");
+    var wrap = document.createElement("div");
+    wrap.className = "assistant-welcome";
+
+    var detail = "";
+    if (payload.detail && payload.detail.length) {
+      detail =
+        '<div class="advice__evidence">' +
+        payload.detail
+          .map(function (d) {
+            return (
+              '<span class="advice__chip">' +
+              escapeHtml(d.label) +
+              " " +
+              escapeHtml(d.value) +
+              "</span>"
+            );
+          })
+          .join("") +
+        "</div>";
+    }
+
+    wrap.innerHTML =
+      '<div class="assistant-welcome__row">' +
+      '<div class="assistant-welcome__icon">💬</div>' +
+      "<div>" +
+      (payload.title
+        ? '<p class="assistant-welcome__title">' + escapeHtml(payload.title) + "</p>"
+        : "") +
+      '<p class="assistant-welcome__text">' +
+      escapeHtml(payload.message || "") +
+      "</p>" +
+      detail +
+      "</div></div>" +
+      sourcesHtml(payload.sources);
+    wrap.appendChild(questionForm());
+
+    slot.innerHTML = "";
+    slot.appendChild(wrap);
+    slot.hidden = false;
+    state.adviceId = null;
+    // Treated like the welcome for polling: a calm poll leaves the answer
+    // alone, but a fresh rule card (a real hazard) still takes over.
+    state.adviceMode = "answer";
+  }
+
   // Kept for the dismiss/mute handlers: a dismissed card returns the panel to
   // its welcome state rather than hiding it.
   function clearAdvice() {
     renderWelcome();
   }
 
-  // A shared input, usable from the welcome state and from a grounded card.
-  // Submitting routes through refreshAdvice with the question flag set.
+  // The assistant input. A question goes to /api/ask (forecast lookup, or an
+  // honest "here's what I can answer"), NOT to /api/advice — that endpoint is
+  // for the rule-triggered card, which appears on its own.
   function questionForm() {
     var form = document.createElement("form");
     form.className = "advice__ask";
     form.innerHTML =
       '<input class="advice__ask-input" type="text" maxlength="200" ' +
-      'placeholder="例如：下午要出门，需要带伞吗" ' +
+      'placeholder="例如：明天会下雨吗" ' +
       'aria-label="向天气助手提问">' +
       '<button class="advice__ask-button" type="submit">问</button>';
     form.addEventListener("submit", function (event) {
@@ -171,19 +224,69 @@
       var button = form.querySelector(".advice__ask-button");
       var question = (input.value || "").trim();
       if (!question) return;
-      // Disable only for the duration of the request, to stop a double-submit.
+      // Disable only for the duration of the request, to stop a double-submit;
+      // always re-enabled when it settles (see `.finally`).
       input.disabled = true;
       if (button) button.disabled = true;
-      refreshAdvice(state.adviceLocation, question, true).finally(function () {
-        // Always re-enable when the request settles. On success the panel is
-        // rebuilt with a fresh input and re-enabling this (now detached) one is
-        // harmless; on an error or a no-op the panel is *not* rebuilt, and this
-        // is the only thing that keeps the input from staying stuck forever.
+      askQuestion(question).finally(function () {
         input.disabled = false;
         if (button) button.disabled = false;
       });
     });
     return form;
+  }
+
+  // Answer a user question. Online it asks /api/ask; offline it reads the
+  // forecast straight out of the loaded sample so the demo still works.
+  function askQuestion(question) {
+    if (!API_BASE) {
+      renderAnswer(offlineForecastAnswer(question));
+      return Promise.resolve();
+    }
+    var loc = state.adviceLocation;
+    if (!loc) {
+      renderAnswer({ kind: "unknown", message: "还没拿到地点，稍等一下再问。" });
+      return Promise.resolve();
+    }
+    var url =
+      ENDPOINTS.ask +
+      "?location=" +
+      encodeURIComponent(loc) +
+      "&q=" +
+      encodeURIComponent(question);
+    return fetch(url, { cache: "no-store" })
+      .then(function (r) {
+        return r.ok ? r.json() : null;
+      })
+      .then(function (payload) {
+        renderAnswer(
+          payload || { kind: "unknown", message: "网络不太顺，稍等再问一次试试。" }
+        );
+      })
+      .catch(function () {
+        renderAnswer({ kind: "unknown", message: "网络不太顺，稍等再问一次试试。" });
+      });
+  }
+
+  // Offline-only: a plain readout of the loaded forecast. Deliberately dumber
+  // than the server (no day parsing, no rain phrasing) so the assistant's real
+  // logic lives in one place — the backend — and this is just a sample view.
+  function offlineForecastAnswer(question) {
+    var loc = (state.latest && (state.latest.locations || [])[0]) || null;
+    if (!loc || !(loc.forecast || []).length) {
+      return { kind: "unknown", message: "样本模式下暂无预报数据。" };
+    }
+    var lines = loc.forecast.slice(0, 3).map(function (d) {
+      var piece = d.date + "：" + (d.condition_text || "");
+      if (d.chance_of_rain != null) piece += "，降水 " + d.chance_of_rain + "%";
+      if (d.maxtemp_c != null) piece += "，最高 " + d.maxtemp_c + "°C";
+      return piece;
+    });
+    return {
+      kind: "forecast",
+      title: loc.name + " · 未来三天（样本）",
+      message: lines.join("；") + "。",
+    };
   }
 
   function sourcesHtml(sources) {
@@ -277,47 +380,25 @@
     sendFeedback(card, "shown");
   }
 
-  // Shown after the user asks in calm weather. Not tailored — the backend only
-  // produces advice when a rule fires — but honest, and never silence. (Free
-  // -form answers in calm weather are the RAG assistant, deferred; see README.)
-  var CALM_REPLY =
-    "现在天气平稳，没有需要特别准备的。等出现高温、大风、强紫外线或降雨，我会在这里提醒你该带什么。";
-
-  // Always returns a promise, so a caller can chain `.finally()` on it.
-  function refreshAdvice(location, question, fromAsk) {
+  // Polls the rule-triggered advice card (not user questions — those go through
+  // askQuestion → /api/ask). Called on every refresh for the primary location.
+  function refreshAdvice(location) {
     if (!ENDPOINTS.advice || !location) return Promise.resolve();
     state.adviceLocation = location;
 
-    // The sample file is a plain document with no query interface; the live
-    // endpoint takes the location, the session and an optional question.
     var url = API_BASE
       ? ENDPOINTS.advice +
         "?location=" +
         encodeURIComponent(location) +
         "&session=" +
-        encodeURIComponent(sessionId()) +
-        (question ? "&q=" + encodeURIComponent(question) : "")
+        encodeURIComponent(sessionId())
       : ENDPOINTS.advice;
 
-    // "Nothing to advise" — either 204 from the live API or a null card offline.
+    // A card stopped applying (calm weather, dismissed, expired). Only step
+    // back to the welcome if a card was actually showing — never stomp a
+    // welcome or a Q&A answer the user is reading.
     var showNoCard = function () {
-      if (fromAsk) {
-        // The user just asked: answer, even if the answer is "all clear".
-        renderWelcome(CALM_REPLY);
-      } else if (state.adviceMode === "card") {
-        // A card was showing and the weather has calmed: return to welcome.
-        renderWelcome();
-      }
-      // Otherwise we are already in the welcome state — leave it, so a poll
-      // does not wipe a reply the user is reading or text they are typing.
-    };
-
-    // A question that could not be answered tells the user so — silence after
-    // a click reads as broken. A background poll that fails stays quiet.
-    var onProblem = function () {
-      if (fromAsk) {
-        renderWelcome("网络不太顺，没能查到。稍等一下再问一次试试。");
-      }
+      if (state.adviceMode === "card") renderWelcome();
     };
 
     return fetch(url, { cache: "no-store" })
@@ -327,10 +408,7 @@
         return response.json();
       })
       .then(function (payload) {
-        if (payload === null) {
-          onProblem();
-          return;
-        }
+        if (payload === null) return; // transient error: leave the panel as-is
         // Offline the document wraps the card so "no advice" is representable.
         var card = payload.none ? null : payload.card !== undefined ? payload.card : payload;
         if (!card) {
@@ -339,7 +417,7 @@
         }
         // Re-rendering an identical card on every poll is what makes this kind
         // of feature feel like a popup. Same id means leave the DOM alone.
-        if (!fromAsk && card.recommendation_id === state.adviceId) return;
+        if (card.recommendation_id === state.adviceId) return;
         if (dismissed().indexOf(card.recommendation_id) !== -1) {
           showNoCard();
           return;
@@ -352,7 +430,6 @@
       })
       .catch(function () {
         // Advice is optional; the weather page has already rendered.
-        onProblem();
       });
   }
 
@@ -744,6 +821,9 @@
         el("locations").innerHTML =
           '<p class="empty">' + escapeHtml(latest.__error.message) + "</p>";
       } else {
+        // Held so the assistant can answer forecast questions from the same
+        // snapshot the cards render from (and locally, without a backend).
+        state.latest = latest;
         renderLocations(latest);
         var age = parseTime(latest.generated_at_utc);
         var stale = age && Date.now() - age.getTime() > 3 * 3600 * 1000;

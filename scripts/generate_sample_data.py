@@ -25,7 +25,12 @@ from weather import monitoring, pipeline, transform  # noqa: E402
 from weather.advice import AdviceService  # noqa: E402
 from weather.advice.repository import InMemoryAdviceRepository  # noqa: E402
 from weather.config import MonitoringSettings, Settings  # noqa: E402
-from weather.models import ForecastHourRecord, Location, make_record_id  # noqa: E402
+from weather.models import (  # noqa: E402
+    ForecastDayRecord,
+    ForecastHourRecord,
+    Location,
+    make_record_id,
+)
 
 OUTPUT_DIR = REPO_ROOT / "dashboard" / "data"
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "current_tokyo.json"
@@ -70,6 +75,41 @@ def build_hourly(now: datetime) -> list[dict]:
                     chance_of_rain=chance,
                     wind_kph=round(random.uniform(5, 25), 1),
                     condition_text="Patchy rain nearby" if chance >= 50 else "Sunny",
+                ).to_dict()
+            )
+    return rows
+
+
+def build_daily(now: datetime) -> list[dict]:
+    """A three-day daily forecast per city, so the offline assistant can answer
+    "会不会下雨 / 明天几度" from the same data the deployed one uses."""
+    random.seed(8127)
+    rows: list[dict] = []
+    for city in CITIES:
+        location = Location(name=city["name"], region=city["region"],
+                            lat=city["lat"], lon=city["lon"])
+        for offset in range(3):
+            day = (now + timedelta(days=offset)).date().isoformat()
+            # Give Osaka a wet "tomorrow" so the demo question ("我在大阪，明天
+            # 会下雨吗") has a clear, obviously-correct answer.
+            chance = 70 if (city["name"] == "Osaka" and offset == 1) else random.randint(0, 40)
+            hi = round(city["base_temp"] + random.uniform(1, 4))
+            rows.append(
+                ForecastDayRecord(
+                    record_id=make_record_id("forecast", location.key, day),
+                    location_key=location.key,
+                    location=location,
+                    date=day,
+                    ingested_at_utc=now.isoformat().replace("+00:00", "Z"),
+                    maxtemp_c=hi,
+                    mintemp_c=hi - random.randint(5, 8),
+                    avgtemp_c=hi - 3,
+                    maxwind_kph=round(random.uniform(10, 30), 1),
+                    totalprecip_mm=round(chance / 100 * 6, 1),
+                    avghumidity=random.randint(50, 85),
+                    daily_chance_of_rain=chance,
+                    uv=random.randint(3, 8),
+                    condition_text="Light rain" if chance >= 50 else "Partly cloudy",
                 ).to_dict()
             )
     return rows
@@ -170,7 +210,10 @@ def sample_provider():
 def main() -> int:
     current_rows, breach_rows = build_rows()
     hourly_rows = build_hourly(datetime.now(UTC))
-    payloads = pipeline.build_serving_payloads(current_rows, breach_rows, hourly_rows)
+    daily_rows = build_daily(datetime.now(UTC))
+    payloads = pipeline.build_serving_payloads(
+        current_rows, breach_rows, hourly_rows, daily_rows
+    )
 
     # Run the real advice service over the sample snapshot, so the offline
     # dashboard shows exactly the card the deployed one would.

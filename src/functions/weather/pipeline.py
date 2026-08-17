@@ -231,10 +231,46 @@ def _next_hour_rain(
     return best
 
 
+def _daily_forecast_by_location(
+    forecast_rows: Sequence[dict[str, Any]],
+    now: datetime | None = None,
+    days: int = 3,
+) -> dict[str, list[dict[str, Any]]]:
+    """Per location, the freshest daily forecast for today onward.
+
+    The same forecast date is re-ingested every half hour, so a date has many
+    records that share a ``record_id``. The dashboard's dedup keeps the *first*
+    seen, which is the *oldest* forecast — stale. Here the answer feature needs
+    the newest, so this groups by (location, date) and keeps the row with the
+    latest ``ingested_at_utc``. (This is the last-write-wins the review flagged
+    for forecasts, applied on the path that actually depends on it.)
+    """
+    today = (now or datetime.now(UTC)).date().isoformat()
+    freshest: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in forecast_rows:
+        key = row.get("location_key", "")
+        date = row.get("date")
+        if not date or date < today:
+            continue
+        prev = freshest.get((key, date))
+        row_at = str(row.get("ingested_at_utc", ""))
+        if prev is None or row_at > str(prev.get("ingested_at_utc", "")):
+            freshest[(key, date)] = row
+
+    by_location: dict[str, list[dict[str, Any]]] = {}
+    for (key, _date), row in freshest.items():
+        by_location.setdefault(key, []).append(row)
+    for key, rows in by_location.items():
+        rows.sort(key=lambda r: r.get("date") or "")
+        by_location[key] = rows[:days]
+    return by_location
+
+
 def build_serving_payloads(
     current_rows: Sequence[dict[str, Any]],
     breach_rows: Sequence[dict[str, Any]],
     hourly_rows: Sequence[dict[str, Any]] = (),
+    forecast_rows: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Shape the small JSON files the public dashboard reads.
 
@@ -244,6 +280,7 @@ def build_serving_payloads(
     flat = [_flatten_row(row) for row in _dedupe_rows(current_rows)]
     generated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     upcoming = _next_hour_rain(hourly_rows)
+    daily = _daily_forecast_by_location(forecast_rows)
 
     by_location: dict[str, list[dict[str, Any]]] = {}
     for row in flat:
@@ -273,6 +310,21 @@ def build_serving_payloads(
                 # as "unknown" rather than "no rain".
                 "precip_chance_next_hour": (upcoming.get(key) or {}).get("chance_of_rain"),
                 "precip_forecast_hour_utc": (upcoming.get(key) or {}).get("time_utc"),
+                # The daily outlook the assistant answers "will it rain
+                # tomorrow / how hot" from. Freshest forecast per date, today
+                # onward; empty when no forecast has been ingested yet.
+                "forecast": [
+                    {
+                        "date": f.get("date"),
+                        "chance_of_rain": f.get("daily_chance_of_rain"),
+                        "maxtemp_c": f.get("maxtemp_c"),
+                        "mintemp_c": f.get("mintemp_c"),
+                        "condition_text": f.get("condition_text"),
+                        "uv": f.get("uv"),
+                        "maxwind_kph": f.get("maxwind_kph"),
+                    }
+                    for f in daily.get(key, [])
+                ],
                 "observation_count_24h": len(rows),
             }
             for key, rows in sorted(by_location.items())
@@ -395,8 +447,9 @@ def curate(hours: int = 24, settings: Settings | None = None) -> dict[str, Any]:
     current_rows = read_bronze("current", hours=hours, settings=settings)
     breach_rows = read_bronze("threshold_breach", hours=hours, settings=settings)
     hourly_rows = read_bronze("forecast_hour", hours=hours, settings=settings)
+    forecast_rows = read_bronze("forecast", hours=hours, settings=settings)
 
-    payloads = build_serving_payloads(current_rows, breach_rows, hourly_rows)
+    payloads = build_serving_payloads(current_rows, breach_rows, hourly_rows, forecast_rows)
     blob_service = clients.get_blob_service(settings)
     for path, payload in payloads.items():
         sinks.write_json_blob(
