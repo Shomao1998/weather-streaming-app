@@ -240,6 +240,35 @@ def _find_location(snapshot: dict, location: str) -> dict | None:
     return None
 
 
+# Aliases so a question can name any of the three dashboard cities in Chinese or
+# English. Grouped by a canonical fragment that appears in the served name/key
+# ("Osaka-Shi" contains "osaka"), so the group is matched to the right entry.
+CITY_ALIASES = (
+    ("tokyo", ("tokyo", "东京", "東京")),
+    ("osaka", ("osaka", "大阪")),
+    ("sapporo", ("sapporo", "札幌")),
+)
+
+
+def _city_in_question(snapshot: dict, question: str) -> dict | None:
+    """The served entry whose city the question actually names, or None.
+
+    This is what lets one input box serve all three cities: the city is taken
+    from the question text, not from a location fixed by the dashboard. When the
+    question names no city, the caller falls back to the default location.
+    """
+    q = question.casefold()
+    for canonical, aliases in CITY_ALIASES:
+        if not any(alias in q for alias in aliases):
+            continue
+        for entry in snapshot.get("locations", []):
+            name = str(entry.get("name") or "").casefold()
+            key = str(entry.get("location_key") or "").casefold()
+            if canonical in name or canonical in key:
+                return entry
+    return None
+
+
 @app.function_name(name="api_ask")
 @app.route(route="api/ask", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 def api_ask(req: func.HttpRequest) -> func.HttpResponse:
@@ -274,7 +303,10 @@ def api_ask(req: func.HttpRequest) -> func.HttpResponse:
             {"kind": "unknown", "message": "天气数据暂时不可用，稍后再试。"}, 503
         )
 
-    entry = _find_location(snapshot, location)
+    # Prefer the city the question actually names; fall back to the location the
+    # dashboard supplied only when no city is named. Without this, the assistant
+    # is pinned to one city and refuses questions about the other two.
+    entry = _city_in_question(snapshot, question) or _find_location(snapshot, location)
     if entry is None:
         return _json_response({"error": f"unknown location '{location}'"}, 400)
 

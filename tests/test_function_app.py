@@ -50,6 +50,41 @@ def test_function_has_the_right_trigger(registered, name, trigger):
     assert trigger in registered[name]
 
 
+# -- city routing: one input box must serve all three cities ----------------
+
+_SNAPSHOT = {
+    "locations": [
+        {"name": "Tokyo", "location_key": "tokyo"},
+        {"name": "Osaka-Shi", "location_key": "osaka"},
+        {"name": "Sapporo", "location_key": "sapporo"},
+    ]
+}
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_name"),
+    [
+        ("东京明天会下雨吗", "Tokyo"),
+        ("我后天去大阪出差该带伞吗", "Osaka-Shi"),
+        ("札幌现在冷不冷", "Sapporo"),
+        ("Is it windy in Sapporo?", "Sapporo"),
+    ],
+)
+def test_city_is_taken_from_the_question(question, expected_name):
+    import function_app
+
+    entry = function_app._city_in_question(_SNAPSHOT, question)
+    assert entry is not None and entry["name"] == expected_name
+
+
+def test_no_city_named_falls_back_to_the_default_location():
+    import function_app
+
+    # A question that names no city must not resolve one — the caller then uses
+    # the dashboard's default location.
+    assert function_app._city_in_question(_SNAPSHOT, "明天会下雨吗") is None
+
+
 def test_deployment_package_has_host_json_at_its_root():
     # host.json one directory below the package root is exactly what broke the
     # previous deployment.
