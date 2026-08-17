@@ -59,6 +59,16 @@
 
     "//10": "--- Azure AI Search. Unset means the local index above is used. ---",
     "//RAG_SEARCH_ENDPOINT": "https://<service>.search.windows.net",
-    "//RAG_SEARCH_INDEX_NAME": "weather-advice-knowledge"
+    "//RAG_SEARCH_INDEX_NAME": "weather-advice-knowledge",
+
+    "//11": "--- Cost guard for the paid chat path. A hard, in-code ceiling ---",
+    "//12": "--- that does not wait for Azure billing: past the daily budget ---",
+    "//13": "--- the assistant serves the free deterministic answer. Set the ---",
+    "//14": "--- cost-per-1k below to the deployed model's real prices. ---",
+    "ASSISTANT_DAILY_BUDGET_USD": "1.2",
+    "ASSISTANT_SESSION_MAX_CALLS": "20",
+    "ASSISTANT_SESSION_WINDOW_SECONDS": "3600",
+    "//RAG_INPUT_COST_PER_1K": "0.00015",
+    "//RAG_OUTPUT_COST_PER_1K": "0.0006"
   }
 }

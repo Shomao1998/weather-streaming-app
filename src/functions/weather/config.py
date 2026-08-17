@@ -42,6 +42,16 @@ def _int(name: str, default: int) -> int:
         raise ConfigError(f"Setting '{name}' must be an integer, got {raw!r}.") from exc
 
 
+def _float(name: str, default: float) -> float:
+    raw = _optional(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"Setting '{name}' must be a number, got {raw!r}.") from exc
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = _optional(name).lower()
     if not raw:
@@ -181,9 +191,20 @@ class RagSettings:
     generation_cache_entries: int = 256
     generation_cache_ttl_seconds: float = 3600.0
 
-    # Used only to estimate spend in telemetry; not a billing source of truth.
+    # Used to estimate spend, both for telemetry and for the assistant's cost
+    # guard. Not a billing source of truth — set these to the deployed model's
+    # real per-1k prices so the guard's ceiling is meaningful.
     input_cost_per_1k: float = 0.00015
     output_cost_per_1k: float = 0.0006
+
+    # Cost guard for the paid chat path. A hard, in-code ceiling that does not
+    # depend on Azure billing latency: once the day's estimated spend crosses
+    # the cap, the assistant serves the free deterministic answer instead.
+    daily_budget_usd: float = 1.2
+    # Per-session throttle so one caller cannot burn the day's budget in
+    # minutes and leave everyone else on the free fallback.
+    session_max_calls: int = 20
+    session_window_seconds: int = 3600
 
 
 @dataclass(frozen=True)
@@ -285,6 +306,9 @@ def load_settings() -> Settings:
             language=_optional("RAG_LANGUAGE", "zh"),
             request_timeout_seconds=float(_int("RAG_TIMEOUT_SECONDS", 8)),
             max_output_tokens=_int("RAG_MAX_OUTPUT_TOKENS", 300),
+            daily_budget_usd=_float("ASSISTANT_DAILY_BUDGET_USD", 1.2),
+            session_max_calls=_int("ASSISTANT_SESSION_MAX_CALLS", 20),
+            session_window_seconds=_int("ASSISTANT_SESSION_WINDOW_SECONDS", 3600),
         ),
         environment=_optional("APP_ENVIRONMENT", "local"),
     )
