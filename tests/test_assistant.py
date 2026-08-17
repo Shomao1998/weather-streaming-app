@@ -105,13 +105,11 @@ def test_answer_routes_forecast():
     assert a.kind == "forecast" and "70%" in a.message
 
 
-def test_answer_guidance_is_honest_until_wired():
+def test_answer_routes_guidance_to_a_cited_passage():
     entry = {"name": "Osaka", "forecast": OSAKA_FORECAST}
     a = assistant.answer(entry, "大阪", "下雨天注意什么", now=NOW)
-    # Guidance retrieval is a later step; the reply must say what it *can* do,
-    # not fake an answer.
-    assert a.kind == "unknown"
-    assert "预报" in a.message
+    assert a.kind == "guidance"
+    assert a.sources and a.sources[0]["source_url"].startswith("https://")
 
 
 def test_answer_unknown_states_scope():
@@ -198,3 +196,84 @@ def test_ask_endpoint_survives_missing_data(app_module, monkeypatch):
     resp = app_module.api_ask(get(location="Osaka", q="明天会下雨吗"))
     assert resp.status_code == 503
     assert json.loads(resp.get_body())["kind"] == "unknown"
+
+
+# -- guidance retrieval (Part 2) --------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def reset_assistant_retriever():
+    """The retriever is cached in the module; reset it so a test's settings
+    (not an earlier test's) build it."""
+    assistant._retriever = None
+    assistant._retriever_tried = False
+    yield
+    assistant._retriever = None
+    assistant._retriever_tried = False
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["下雨天开车要注意什么", "能不能蹚水过去", "紫外线强怎么防护", "大风天要小心什么", "出门该带什么"],
+)
+def test_hazard_questions_route_to_guidance(question):
+    assert assistant.classify(question) == "guidance"
+
+
+def test_a_hazard_only_question_still_routes_to_guidance():
+    # No generic guidance verb, but "蹚水" names a flood situation.
+    assert assistant.classify("能不能蹚水过去") == "guidance"
+
+
+HOT_WEATHER = {"name": "Osaka-Shi", "temp_c": 36, "uv": 8, "wind_kph": 10,
+               "precip_chance_next_hour": 5, "forecast": []}
+
+
+@pytest.mark.parametrize(
+    ("question", "expect_authority_fragment"),
+    [
+        ("下雨天开车要注意什么", "NOAA"),
+        ("紫外线强怎么防护", "Environmental Protection"),
+        ("大风天要小心什么", "NOAA"),
+    ],
+)
+def test_guidance_returns_official_passage_and_citation(question, expect_authority_fragment):
+    a = assistant.answer(HOT_WEATHER, "大阪", question)
+    assert a.kind == "guidance"
+    assert a.message and not a.message.lstrip().startswith("Source:")  # not the boilerplate
+    assert a.sources and expect_authority_fragment in a.sources[0]["authority"]
+    assert a.sources[0]["source_url"].startswith("https://")
+
+
+def test_guidance_skips_the_attribution_block():
+    a = assistant.answer(HOT_WEATHER, "大阪", "下雨天要注意什么")
+    # The message is real guidance, not "Source: ... public domain".
+    assert "public domain" not in a.message
+
+
+def test_generic_question_uses_the_weather_to_pick_a_hazard():
+    # No hazard named; UV is 8, so sun protection is the relevant guidance.
+    a = assistant.answer(HOT_WEATHER, "大阪", "出门要注意什么")
+    assert a.kind == "guidance"
+    assert "紫外线" in a.title or "shade" in a.message.lower() or "sunscreen" in a.message.lower()
+
+
+def test_calm_weather_generic_question_is_honest():
+    calm = {"name": "Sapporo", "temp_c": 18, "uv": 2, "wind_kph": 8,
+            "precip_chance_next_hour": 0, "us_epa_index": 1, "forecast": []}
+    a = assistant.answer(calm, "札幌", "出门要注意什么")
+    # Nothing warrants a hazard warning and none is named → honest scope note.
+    assert a.kind == "unknown"
+
+
+def test_ask_endpoint_answers_guidance_with_a_citation(app_module, monkeypatch):
+    snap = {"generated_at_utc": NOW.isoformat(), "locations": [
+        {"location_key": "34.69,135.50", "name": "Osaka", "temp_c": 36, "uv": 8,
+         "wind_kph": 10, "precip_chance_next_hour": 5, "forecast": []},
+    ]}
+    monkeypatch.setattr(app_module.serving, "read_serving_document", lambda *a, **k: snap)
+    resp = app_module.api_ask(get(location="Osaka", q="紫外线强怎么防护"))
+    assert resp.status_code == 200
+    body = json.loads(resp.get_body())
+    assert body["kind"] == "guidance"
+    assert body["sources"][0]["source_url"].startswith("https://")

@@ -271,7 +271,15 @@
   // Offline-only: a plain readout of the loaded forecast. Deliberately dumber
   // than the server (no day parsing, no rain phrasing) so the assistant's real
   // logic lives in one place — the backend — and this is just a sample view.
+  // Guidance retrieval is backend-only, so a guidance question is answered
+  // honestly rather than with an unrelated forecast.
   function offlineForecastAnswer(question) {
+    if (/注意|该带|怎么|防护|防晒|小心|安全|穿什么|准备/.test(question)) {
+      return {
+        kind: "unknown",
+        message: "本地样本模式只支持天气预报问答；防护建议这类问题请在线上体验。",
+      };
+    }
     var loc = (state.latest && (state.latest.locations || [])[0]) || null;
     if (!loc || !(loc.forecast || []).length) {
       return { kind: "unknown", message: "样本模式下暂无预报数据。" };

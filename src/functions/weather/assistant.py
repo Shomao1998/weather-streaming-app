@@ -16,9 +16,13 @@ never a fabricated one.
 
 from __future__ import annotations
 
+import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Words that mark a question as asking for forecast *data* — a condition or a
 # measurement, usually paired with a day. Kept separate from the guidance words
@@ -31,9 +35,9 @@ FORECAST_WORDS = (
 )
 
 GUIDANCE_WORDS = (
-    "注意", "该带", "带什么", "怎么办", "需要准备", "准备什么", "防护", "防晒",
-    "安全", "建议", "穿什么", "要不要", "如何", "怎么防", "注意事项",
-    "protect", "should i", "how to", "what to",
+    "注意", "小心", "该带", "带什么", "怎么办", "需要准备", "准备什么", "防护",
+    "防晒", "安全", "建议", "穿什么", "要不要", "能不能", "可不可以", "如何",
+    "怎么防", "注意事项", "protect", "should i", "how to", "what to",
 )
 
 # Day references, resolved relative to "today" in the location's data. Kept
@@ -68,13 +72,21 @@ class Answer:
 
 
 def classify(question: str) -> str:
-    """Route a question to a handler. Guidance wins ties, because a guidance
-    phrase ("下雨天注意什么") almost always contains a forecast word too."""
+    """Route a question to a handler.
+
+    Order matters. An explicit help-seeking phrase ("下雨天注意什么") is
+    guidance even though it contains a forecast word. A bare data question
+    ("会不会下雨") is forecast. A question that only names a hazard situation
+    ("能不能蹚水过去") has neither marker but is still asking for guidance, so a
+    hazard keyword with no data question falls to guidance last.
+    """
     q = (question or "").lower()
     if any(word in q for word in GUIDANCE_WORDS):
         return "guidance"
     if any(word in q for word in FORECAST_WORDS):
         return "forecast"
+    if any(word in q for words in _HAZARD_KEYWORDS.values() for word in words):
+        return "guidance"
     return "unknown"
 
 
@@ -200,10 +212,151 @@ def answer_forecast(location: str, forecast: list[dict[str, Any]], question: str
     )
 
 
-# Placeholder until the guidance retrieval path lands. Kept explicit so the
-# endpoint has one place to swap in the real handler.
+# -- guidance: extractive retrieval over the official corpus ----------------
+
+# Which hazard corpus a guidance question is about, by keyword. Deterministic
+# routing rather than embedding similarity: the free lexical embedder does not
+# bridge Chinese to the English corpus well, and a keyword map does.
+_HAZARD_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "heat": ("高温", "中暑", "防暑", "太热", "酷热", "heat", "hot"),
+    "uv": ("紫外线", "防晒", "晒伤", "日晒", "太阳", "uv", "sunscreen", "sun"),
+    "wind": ("大风", "刮风", "阵风", "强风", "wind", "gale"),
+    "rain": ("下雨", "雨天", "淋雨", "带伞", "积水", "洪水", "涉水", "蹚水",
+             "暴雨", "rain", "flood", "umbrella"),
+    "air_quality": ("空气", "雾霾", "口罩", "污染", "pm2", "air", "smog", "mask"),
+}
+
+# Chinese labels for the answer title — the corpus content stays in its
+# original official English, which the citation attributes.
+_HAZARD_LABEL = {
+    "heat": "高温 · 官方防护提示",
+    "uv": "紫外线 · 官方防护提示",
+    "wind": "大风 · 官方安全提示",
+    "rain": "降雨 · 官方安全提示",
+    "air_quality": "空气质量 · 官方提示",
+}
+
+# English seed text per hazard. The free lexical retriever cannot match a
+# Chinese question to an English section, so the seed carries the retrieval to
+# the right passage and the question refines it — the same trick the RAG
+# provider uses. Without it a Chinese query lands on whatever chunk shares the
+# most generic tokens, usually the document's title block.
+_HAZARD_SEED = {
+    "heat": "extreme heat protective actions hydration outdoor activity clothing shade",
+    "uv": "high uv index sun protection shade sunscreen protective clothing",
+    "wind": "high wind safety outdoors indoors driving falling debris secure objects",
+    "rain": "heavy rain flooding safety driving flooded roads walking on foot electrical",
+    "air_quality": "air quality index limit outdoor exertion sensitive groups",
+}
+
+_retriever: Any = None
+_retriever_lock = threading.RLock()
+_retriever_tried = False
+
+
+def _get_retriever() -> Any:
+    """The local, zero-cost retriever, built once. None if the index is
+    missing — the caller then abstains rather than fabricating."""
+    global _retriever, _retriever_tried
+    if _retriever is not None or _retriever_tried:
+        return _retriever
+    with _retriever_lock:
+        if _retriever is None and not _retriever_tried:
+            _retriever_tried = True
+            try:
+                from .advice import factory
+                from .config import get_settings
+
+                _retriever = factory.build_retriever(get_settings())
+            except Exception:
+                logger.exception("Assistant: could not build the guidance retriever.")
+                _retriever = None
+    return _retriever
+
+
+def _hazards_from_question(question: str) -> list[str]:
+    q = (question or "").lower()
+    return [h for h, words in _HAZARD_KEYWORDS.items() if any(w in q for w in words)]
+
+
+def _hazards_from_weather(weather: dict[str, Any]) -> list[str]:
+    """When the question names no hazard ("出门要注意什么"), fall back to what
+    the current weather actually warrants."""
+    hazards = []
+    uv = weather.get("uv")
+    temp = weather.get("temp_c")
+    wind = weather.get("wind_kph")
+    rain = weather.get("precip_chance_next_hour")
+    epa = weather.get("us_epa_index")
+    if uv is not None and uv >= 6:
+        hazards.append("uv")
+    if temp is not None and temp >= 30:
+        hazards.append("heat")
+    if wind is not None and wind >= 30:
+        hazards.append("wind")
+    if rain is not None and rain >= 40:
+        hazards.append("rain")
+    if epa is not None and epa >= 3:
+        hazards.append("air_quality")
+    return hazards
+
+
 def answer_guidance(location: str, question: str, weather: dict[str, Any]) -> Answer | None:
-    return None
+    """Retrieve the most relevant official guidance for a guidance question.
+
+    Extractive, not generative: the answer is the retrieved passage itself,
+    with its citation. No model, no external call. Returns None when nothing
+    can be answered — the caller then states the scope honestly.
+    """
+    hazards = _hazards_from_question(question) or _hazards_from_weather(weather)
+    if not hazards:
+        return None
+
+    retriever = _get_retriever()
+    if retriever is None:
+        return None
+
+    from .advice.retrieval import RetrievalQuery
+
+    seed = " ".join(_HAZARD_SEED.get(h, "") for h in hazards)
+    try:
+        results = retriever.retrieve(
+            RetrievalQuery(
+                text=f"{seed} {question}".strip(),
+                hazard_types=tuple(hazards),
+                jurisdiction="US",
+                locale="en",
+                top_k=4,
+            )
+        )
+    except Exception:
+        logger.exception("Assistant: guidance retrieval failed.")
+        return None
+
+    # The first chunk of each document is its title-plus-attribution block, not
+    # guidance. Skip anything that is just provenance; keep the first real
+    # passage.
+    passage = next(
+        (r.chunk for r in results if not r.chunk.content.lstrip().startswith("Source:")),
+        None,
+    )
+    if passage is None:
+        return None
+
+    hazard = passage.hazard_types[0] if passage.hazard_types else hazards[0]
+    return Answer(
+        kind="guidance",
+        location=location,
+        title=_HAZARD_LABEL.get(hazard, "官方安全提示"),
+        message=passage.content,
+        sources=[
+            {
+                "authority": passage.authority or passage.title,
+                "source_url": passage.source_url,
+                "title": passage.title,
+            }
+        ],
+    )
 
 
 def answer(snapshot_location: dict[str, Any], location_name: str, question: str,
