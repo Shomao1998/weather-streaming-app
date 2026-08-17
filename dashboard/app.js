@@ -168,10 +168,20 @@
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var input = form.querySelector(".advice__ask-input");
+      var button = form.querySelector(".advice__ask-button");
       var question = (input.value || "").trim();
       if (!question) return;
+      // Disable only for the duration of the request, to stop a double-submit.
       input.disabled = true;
-      refreshAdvice(state.adviceLocation, question, true);
+      if (button) button.disabled = true;
+      refreshAdvice(state.adviceLocation, question, true).finally(function () {
+        // Always re-enable when the request settles. On success the panel is
+        // rebuilt with a fresh input and re-enabling this (now detached) one is
+        // harmless; on an error or a no-op the panel is *not* rebuilt, and this
+        // is the only thing that keeps the input from staying stuck forever.
+        input.disabled = false;
+        if (button) button.disabled = false;
+      });
     });
     return form;
   }
@@ -273,8 +283,9 @@
   var CALM_REPLY =
     "现在天气平稳，没有需要特别准备的。等出现高温、大风、强紫外线或降雨，我会在这里提醒你该带什么。";
 
+  // Always returns a promise, so a caller can chain `.finally()` on it.
   function refreshAdvice(location, question, fromAsk) {
-    if (!ENDPOINTS.advice || !location) return;
+    if (!ENDPOINTS.advice || !location) return Promise.resolve();
     state.adviceLocation = location;
 
     // The sample file is a plain document with no query interface; the live
@@ -301,14 +312,25 @@
       // does not wipe a reply the user is reading or text they are typing.
     };
 
-    fetch(url, { cache: "no-store" })
+    // A question that could not be answered tells the user so — silence after
+    // a click reads as broken. A background poll that fails stays quiet.
+    var onProblem = function () {
+      if (fromAsk) {
+        renderWelcome("网络不太顺，没能查到。稍等一下再问一次试试。");
+      }
+    };
+
+    return fetch(url, { cache: "no-store" })
       .then(function (response) {
         if (response.status === 204) return { none: true };
         if (!response.ok) return null;
         return response.json();
       })
       .then(function (payload) {
-        if (payload === null) return; // transient error: leave the panel as-is
+        if (payload === null) {
+          onProblem();
+          return;
+        }
         // Offline the document wraps the card so "no advice" is representable.
         var card = payload.none ? null : payload.card !== undefined ? payload.card : payload;
         if (!card) {
@@ -330,6 +352,7 @@
       })
       .catch(function () {
         // Advice is optional; the weather page has already rendered.
+        onProblem();
       });
   }
 

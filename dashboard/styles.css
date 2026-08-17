@@ -91,7 +91,9 @@ h3 {
 }
 
 .masthead__inner {
-  max-width: 1100px;
+  /* Matches main's width so the title's left edge and the Live badge's right
+     edge line up with the content and the assistant rail below. */
+  max-width: 1260px;
   margin: 0 auto;
   padding: 1.75rem 1.25rem;
   display: flex;
