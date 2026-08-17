@@ -137,8 +137,8 @@
       '<div class="assistant-welcome__row">' +
       '<div class="assistant-welcome__icon">🌤️</div>' +
       "<div>" +
-      '<p class="assistant-welcome__title">欢迎来到天气看板</p>' +
-      '<p class="assistant-welcome__text">今天有什么安排吗？让我帮你看看该准备什么。</p>' +
+      '<p class="assistant-welcome__title">Weather assistant</p>' +
+      '<p class="assistant-welcome__text">Ask about Tokyo, Osaka or Sapporo — I\'ll help you plan what to bring.</p>' +
       "</div></div>" +
       (replyText
         ? '<p class="assistant-welcome__reply">' + escapeHtml(replyText) + "</p>"
@@ -215,9 +215,9 @@
     form.className = "advice__ask";
     form.innerHTML =
       '<input class="advice__ask-input" type="text" maxlength="200" ' +
-      'placeholder="例如：明天会下雨吗" ' +
-      'aria-label="向天气助手提问">' +
-      '<button class="advice__ask-button" type="submit">问</button>';
+      'placeholder="e.g. Do I need an umbrella in Osaka tomorrow?" ' +
+      'aria-label="Ask the weather assistant">' +
+      '<button class="advice__ask-button" type="submit">Ask</button>';
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var input = form.querySelector(".advice__ask-input");
