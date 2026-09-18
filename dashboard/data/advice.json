@@ -4,11 +4,11 @@
     "location": "Tokyo",
     "trigger_code": "RAIN_EXPECTED",
     "severity": "info",
-    "title": "一小时内可能下雨",
-    "message": "出门记得带伞，路上多留些时间。",
+    "title": "Rain likely soon",
+    "message": "Take an umbrella and allow extra travel time.",
     "evidence": [
       {
-        "label": "降水概率",
+        "label": "Chance of rain",
         "value": "85%"
       }
     ],
@@ -34,11 +34,11 @@
     "actions": [
       {
         "type": "dismiss",
-        "label": "知道了"
+        "label": "Got it"
       },
       {
         "type": "mute",
-        "label": "今天不再提醒"
+        "label": "Mute for today"
       }
     ]
   }

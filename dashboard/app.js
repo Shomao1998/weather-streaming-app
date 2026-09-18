@@ -245,7 +245,7 @@
     }
     var loc = state.adviceLocation;
     if (!loc) {
-      renderAnswer({ kind: "unknown", message: "还没拿到地点，稍等一下再问。" });
+      renderAnswer({ kind: "unknown", message: "No location loaded yet — please try again in a moment." });
       return Promise.resolve();
     }
     var url =
@@ -260,11 +260,11 @@
       })
       .then(function (payload) {
         renderAnswer(
-          payload || { kind: "unknown", message: "网络不太顺，稍等再问一次试试。" }
+          payload || { kind: "unknown", message: "The network hiccuped — please ask again." }
         );
       })
       .catch(function () {
-        renderAnswer({ kind: "unknown", message: "网络不太顺，稍等再问一次试试。" });
+        renderAnswer({ kind: "unknown", message: "The network hiccuped — please ask again." });
       });
   }
 
@@ -274,26 +274,26 @@
   // Guidance retrieval is backend-only, so a guidance question is answered
   // honestly rather than with an unrelated forecast.
   function offlineForecastAnswer(question) {
-    if (/注意|该带|怎么|防护|防晒|小心|安全|穿什么|准备/.test(question)) {
+    if (/注意|该带|怎么|防护|防晒|小心|安全|穿什么|准备|protect|should i|how to|what to/i.test(question)) {
       return {
         kind: "unknown",
-        message: "本地样本模式只支持天气预报问答；防护建议这类问题请在线上体验。",
+        message: "Sample mode only answers forecast questions; try guidance questions on the live site.",
       };
     }
     var loc = (state.latest && (state.latest.locations || [])[0]) || null;
     if (!loc || !(loc.forecast || []).length) {
-      return { kind: "unknown", message: "样本模式下暂无预报数据。" };
+      return { kind: "unknown", message: "No forecast data in sample mode." };
     }
     var lines = loc.forecast.slice(0, 3).map(function (d) {
-      var piece = d.date + "：" + (d.condition_text || "");
-      if (d.chance_of_rain != null) piece += "，降水 " + d.chance_of_rain + "%";
-      if (d.maxtemp_c != null) piece += "，最高 " + d.maxtemp_c + "°C";
+      var piece = d.date + ": " + (d.condition_text || "");
+      if (d.chance_of_rain != null) piece += ", rain " + d.chance_of_rain + "%";
+      if (d.maxtemp_c != null) piece += ", high " + d.maxtemp_c + "°C";
       return piece;
     });
     return {
       kind: "forecast",
-      title: loc.name + " · 未来三天（样本）",
-      message: lines.join("；") + "。",
+      title: loc.name + " · next 3 days (sample)",
+      message: lines.join("; ") + ".",
     };
   }
 
@@ -317,7 +317,7 @@
       })
       .join("");
 
-    return '<p class="advice__sources"><span>依据：</span>' + links + "</p>";
+    return '<p class="advice__sources"><span>Source:</span>' + links + "</p>";
   }
 
   function renderAdvice(card) {
@@ -353,8 +353,8 @@
       sourcesHtml(card.sources) +
       '<p class="advice__meta">' +
       escapeHtml(card.location) +
-      " · 天气数据更新于 " +
-      escapeHtml(timeAgoZh(card.weather_observed_at_utc)) +
+      " · weather updated " +
+      escapeHtml(timeAgo(card.weather_observed_at_utc)) +
       "</p>" +
       '<div class="advice__actions"></div>' +
       "</div>";
@@ -475,18 +475,16 @@
     return Math.round(hours / 24) + "d ago";
   }
 
-  // The advice card is written in Chinese, so its metadata is too — mixing
-  // "更新于" with "82s ago" in one line reads as a bug.
-  function timeAgoZh(value) {
+  function timeAgo(value) {
     var d = parseTime(value);
-    if (!d) return "未知";
+    if (!d) return "unknown";
     var seconds = Math.round((Date.now() - d.getTime()) / 1000);
-    if (seconds < 90) return Math.max(seconds, 0) + " 秒前";
+    if (seconds < 90) return Math.max(seconds, 0) + "s ago";
     var minutes = Math.round(seconds / 60);
-    if (minutes < 90) return minutes + " 分钟前";
+    if (minutes < 90) return minutes + "m ago";
     var hours = Math.round(minutes / 60);
-    if (hours < 36) return hours + " 小时前";
-    return Math.round(hours / 24) + " 天前";
+    if (hours < 36) return hours + "h ago";
+    return Math.round(hours / 24) + "d ago";
   }
 
   function clockTime(value) {
