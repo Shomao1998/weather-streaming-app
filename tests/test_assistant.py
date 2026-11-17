@@ -79,6 +79,34 @@ def test_low_chance_says_basically_no_rain():
     assert "基本不会下雨" in a.message
 
 
+@pytest.mark.parametrize(
+    ("question", "lang"),
+    [
+        ("明天会下雨吗", "zh"),
+        ("will it rain tomorrow", "en"),
+        ("明日は雨が降りますか", "ja"),  # kanji + kana → Japanese, not Chinese
+        ("サッポロ", "ja"),  # katakana only
+    ],
+)
+def test_language_follows_the_question(question, lang):
+    assert assistant._lang(question) == lang
+
+
+def test_forecast_answer_is_in_the_questions_language():
+    # Same data, three languages — the templated copy follows the question.
+    en = assistant.answer_forecast("Osaka", OSAKA_FORECAST, "will it rain tomorrow", now=NOW)
+    assert "Chance of rain 70%" in en.message and "umbrella" in en.message
+    ja = assistant.answer_forecast("Osaka", OSAKA_FORECAST, "明日は雨が降りますか", now=NOW)
+    assert "降水確率 70%" in ja.message and "傘" in ja.message
+    assert ja.title == "Osaka · 明日"
+
+
+def test_japanese_unknown_answers_in_japanese():
+    a = assistant.answer({"forecast": []}, "Tokyo", "こんにちは、雑談しましょう", now=NOW)
+    assert a.kind == "unknown"
+    assert "天気予報" in a.message  # Japanese scope message, not Chinese or English
+
+
 def test_no_day_named_gives_a_multi_day_outlook():
     a = assistant.answer_forecast("大阪", OSAKA_FORECAST, "大阪天气怎么样", now=NOW)
     assert "今天" in a.message and "明天" in a.message and "后天" in a.message

@@ -42,24 +42,24 @@ class AdviceContentProvider(Protocol):
 # can emit.
 TEMPLATES: dict[AdviceTrigger, tuple[str, str]] = {
     AdviceTrigger.RAIN_EXPECTED: (
-        "一小时内可能下雨",
-        "未来一小时降水概率较高，出门记得带伞哦。",
+        "Rain likely soon",
+        "There's a good chance of rain within the hour — take an umbrella.",
     ),
     AdviceTrigger.HIGH_UV: (
-        "紫外线较强",
-        "紫外线指数偏高，注意防晒，避免长时间暴晒。",
+        "High UV",
+        "The UV index is high — use sun protection and avoid long exposure.",
     ),
     AdviceTrigger.EXTREME_HEAT: (
-        "高温提醒",
-        "气温较高，记得补水，尽量避开高温时段的户外活动。",
+        "High heat",
+        "It's hot out — stay hydrated and avoid outdoor activity at peak heat.",
     ),
     AdviceTrigger.HIGH_WIND: (
-        "风力较大",
-        "室外风力较大，出行注意安全，留意高空坠物。",
+        "Strong wind",
+        "Winds are strong outside — take care and watch for falling debris.",
     ),
 }
 
-FALLBACK = ("天气提醒", "当前天气需要留意，出门前请关注最新情况。")
+FALLBACK = ("Weather notice", "Conditions warrant attention — check the latest before heading out.")
 
 
 class TemplateAdviceProvider:

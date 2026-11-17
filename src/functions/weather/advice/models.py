@@ -202,8 +202,8 @@ class AdviceCard:
     advice_codes: tuple[str, ...] = ()
     actions: tuple[Action, ...] = field(
         default_factory=lambda: (
-            Action("dismiss", "知道了"),
-            Action("mute", "今天不再提醒"),
+            Action("dismiss", "Got it"),
+            Action("mute", "Mute for today"),
         )
     )
 

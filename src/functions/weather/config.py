@@ -181,7 +181,9 @@ class RagSettings:
     min_chunks: int = 1
     jurisdiction: str = "US"
     locale: str = "en"
-    language: str = "zh"
+    # The proactive advice card's language. English by default — the dashboard is
+    # English; the interactive assistant switches per question on its own.
+    language: str = "en"
 
     request_timeout_seconds: float = 8.0
     max_output_tokens: int = 300
@@ -303,7 +305,7 @@ def load_settings() -> Settings:
             min_chunks=_int("RAG_MIN_CHUNKS", 1),
             jurisdiction=_optional("RAG_JURISDICTION", "US"),
             locale=_optional("RAG_LOCALE", "en"),
-            language=_optional("RAG_LANGUAGE", "zh"),
+            language=_optional("RAG_LANGUAGE", "en"),
             request_timeout_seconds=float(_int("RAG_TIMEOUT_SECONDS", 8)),
             max_output_tokens=_int("RAG_MAX_OUTPUT_TOKENS", 300),
             daily_budget_usd=_float("ASSISTANT_DAILY_BUDGET_USD", 1.2),

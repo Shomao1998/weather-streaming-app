@@ -32,20 +32,24 @@ FORECAST_WORDS = (
     "放晴", "晴天", "晴不晴", "多云", "阴天", "天气", "预报", "湿度", "刮风",
     "风大", "紫外线", "热吗", "冷吗", "下雨吗", "会下", "rain", "temperature",
     "forecast", "weather", "hot", "cold",
+    # Japanese forecast words (kanji differ from the simplified-Chinese forms).
+    "天気", "気温", "雪", "晴れ", "降り", "雨", "予報",
 )
 
 GUIDANCE_WORDS = (
     "注意", "小心", "该带", "带什么", "怎么办", "需要准备", "准备什么", "防护",
     "防晒", "安全", "建议", "穿什么", "要不要", "能不能", "可不可以", "如何",
     "怎么防", "注意事项", "protect", "should i", "how to", "what to",
+    # Japanese guidance markers.
+    "気をつけ", "対策", "気を付け",
 )
 
 # Day references, resolved relative to "today" in the location's data. Kept
 # small and explicit; "周末/下周" and the like are deliberately out of scope
-# rather than guessed at.
-_TODAY_WORDS = ("今天", "今日", "现在", "today", "now")
+# rather than guessed at. The Chinese 今日/明日 forms double as Japanese.
+_TODAY_WORDS = ("今天", "今日", "现在", "本日", "today", "now")
 _TOMORROW_WORDS = ("明天", "明日", "tomorrow")
-_DAY_AFTER_WORDS = ("后天", "day after")
+_DAY_AFTER_WORDS = ("后天", "明後日", "あさって", "day after")
 
 
 @dataclass
@@ -71,6 +75,97 @@ class Answer:
         return payload
 
 
+def _lang(question: str) -> str:
+    """Which language to answer in — English by default, Chinese or Japanese only
+    to match the person asking. Japanese is checked first: kana (hiragana /
+    katakana) is a definitive Japanese signal, and Japanese writes its kanji in
+    the same Unicode block as Chinese, so a kana hit must win before the Han
+    check. Then Chinese for Han characters, else English."""
+    has_han = False
+    for ch in question or "":
+        if "぀" <= ch <= "ヿ" or "ｦ" <= ch <= "ﾟ":  # hiragana, katakana, half-width kana
+            return "ja"
+        if "一" <= ch <= "鿿":  # CJK unified ideographs (Han)
+            has_han = True
+    return "zh" if has_han else "en"
+
+
+# Day labels, by language, for the answer title.
+_DAY_LABELS = {
+    "today": {"en": "today", "zh": "今天", "ja": "今日"},
+    "tomorrow": {"en": "tomorrow", "zh": "明天", "ja": "明日"},
+    "day_after": {"en": "the day after tomorrow", "zh": "后天", "ja": "明後日"},
+}
+
+# Punctuation that differs by language: the separator inside a headline list, the
+# join between the headline and the rain phrase, the sentence terminator, and the
+# separator between day lines in the multi-day outlook.
+_SEP = {"en": ", ", "zh": "，", "ja": "、"}
+_MID = {"en": ". ", "zh": "。", "ja": "。"}
+_END = {"en": ".", "zh": "。", "ja": "。"}
+_OUTLOOK_SEP = {"en": "; ", "zh": "；", "ja": "、"}
+
+# Every templated phrase the forecast answer can emit, per language. The
+# retrieved guidance passages stay in their original official English; only the
+# surrounding copy is translated here.
+_T = {
+    "en": {
+        "hi_lo": "High {hi:g}°C / Low {lo:g}°C",
+        "chance": "Chance of rain {chance}%",
+        "no_data": "No forecast data",
+        "lbl_hi": "High", "lbl_lo": "Low", "lbl_rain": "Chance of rain", "lbl_uv": "UV",
+        "no_forecast_now": "No forecast data available right now — please try again shortly.",
+        "horizon": "The forecast only reaches {horizon}, so {label} isn't available yet.",
+        "outlook_piece": "{lbl}: {cond}",
+        "outlook_rain": ", rain {chance}%",
+        "outlook_title": "Next few days",
+        "rain": ("Rain is very likely — take an umbrella.",
+                 "There's a good chance of rain — bring an umbrella.",
+                 "There may be a little rain — an umbrella is a safe bet.",
+                 "Rain is unlikely."),
+        "guidance_na": "I can't answer that kind of guidance question yet. I can answer "
+                       "the forecast — for example, \"Will it rain tomorrow?\"",
+        "unknown": "I can answer the forecast — for example, \"Will it rain tomorrow?\" "
+                   "or \"How hot is it today?\"",
+    },
+    "zh": {
+        "hi_lo": "最高 {hi:g}°C / 最低 {lo:g}°C",
+        "chance": "降水概率 {chance}%",
+        "no_data": "暂无预报数据",
+        "lbl_hi": "最高", "lbl_lo": "最低", "lbl_rain": "降水概率", "lbl_uv": "紫外线",
+        "no_forecast_now": "暂时没有拿到未来的预报数据，稍后再问一次试试。",
+        "horizon": "预报只到 {horizon}，还看不到{label}。",
+        "outlook_piece": "{lbl}：{cond}",
+        "outlook_rain": "，降水 {chance}%",
+        "outlook_title": "未来几天",
+        "rain": ("很可能下雨，出门带把伞。", "有较大机会下雨，建议带伞。",
+                 "可能有零星降雨，带把伞更稳妥。", "基本不会下雨。"),
+        "guidance_na": "这类防护建议我暂时答不了。现在我可以答天气预报，"
+                       "比如「明天会下雨吗」「后天几度」。",
+        "unknown": "我可以答天气预报，比如「明天会下雨吗」「今天几度」。",
+    },
+    "ja": {
+        "hi_lo": "最高 {hi:g}°C / 最低 {lo:g}°C",
+        "chance": "降水確率 {chance}%",
+        "no_data": "予報データがありません",
+        "lbl_hi": "最高", "lbl_lo": "最低", "lbl_rain": "降水確率", "lbl_uv": "UV",
+        "no_forecast_now": "現在、予報データを取得できません。後ほどもう一度お試しください。",
+        "horizon": "予報は {horizon} までです。{label}はまだ表示できません。",
+        "outlook_piece": "{lbl}：{cond}",
+        "outlook_rain": "、降水 {chance}%",
+        "outlook_title": "今後数日",
+        "rain": ("雨の可能性がとても高いです。傘をお持ちください。",
+                 "雨が降る可能性が高いです。傘をおすすめします。",
+                 "小雨が降るかもしれません。傘があると安心です。",
+                 "雨の可能性は低いです。"),
+        "guidance_na": "そのような対策に関する質問にはまだお答えできません。"
+                       "天気予報についてはお答えできます（例：「明日は雨が降りますか」）。",
+        "unknown": "天気予報についてお答えできます"
+                   "（例：「明日は雨が降りますか」「今日の気温は？」）。",
+    },
+}
+
+
 def classify(question: str) -> str:
     """Route a question to a handler.
 
@@ -91,74 +186,93 @@ def classify(question: str) -> str:
 
 
 def _target_date(question: str, now: datetime) -> tuple[date | None, str]:
-    """The day the question is about, and a Chinese label for it.
-
-    None means "no specific day named" — the caller then shows a short
-    multi-day outlook rather than picking one.
+    """The day the question is about, and a label *key* for it ("today" /
+    "tomorrow" / "day_after"). None means no specific day was named — the caller
+    then shows a short multi-day outlook rather than picking one.
     """
     q = question or ""
     today = now.date()
     if any(w in q for w in _DAY_AFTER_WORDS):
-        return today + timedelta(days=2), "后天"
+        return today + timedelta(days=2), "day_after"
     if any(w in q for w in _TOMORROW_WORDS):
-        return today + timedelta(days=1), "明天"
+        return today + timedelta(days=1), "tomorrow"
     if any(w in q for w in _TODAY_WORDS):
-        return today, "今天"
+        return today, "today"
     return None, ""
 
 
-def _rain_phrase(chance: Any) -> str:
+def _rain_phrase(chance: Any, lang: str) -> str:
     if chance is None:
         return ""
     try:
         c = int(chance)
     except (TypeError, ValueError):
         return ""
+    phrases = _T[lang]["rain"]
     if c >= 80:
-        return "很可能下雨，出门带把伞。"
+        return phrases[0]
     if c >= 50:
-        return "有较大机会下雨，建议带伞。"
+        return phrases[1]
     if c >= 20:
-        return "可能有零星降雨，带把伞更稳妥。"
-    return "基本不会下雨。"
+        return phrases[2]
+    return phrases[3]
 
 
-def _day_label(entry_date: str, now: datetime) -> str:
+def _day_label_key(entry_date: str, now: datetime) -> tuple[str, str]:
+    """(label_key, fallback_text). The key resolves to language text; the
+    fallback is the raw date for days beyond the day after tomorrow."""
     try:
         d = date.fromisoformat(entry_date)
     except (TypeError, ValueError):
-        return entry_date or ""
+        return "", entry_date or ""
     delta = (d - now.date()).days
-    return {0: "今天", 1: "明天", 2: "后天"}.get(delta, entry_date)
+    key = {0: "today", 1: "tomorrow", 2: "day_after"}.get(delta, "")
+    return key, entry_date
 
 
-def _format_day(location: str, day: dict[str, Any], label: str, now: datetime) -> Answer:
-    label = label or _day_label(day.get("date", ""), now)
+def _label_text(key: str, fallback: str, lang: str) -> str:
+    if key:
+        return _DAY_LABELS[key][lang]
+    return fallback
+
+
+def _format_day(location: str, day: dict[str, Any], label_key: str,
+                now: datetime, lang: str) -> Answer:
+    if not label_key:
+        label_key, fallback = _day_label_key(day.get("date", ""), now)
+        label = _label_text(label_key, fallback, lang)
+    else:
+        label = _DAY_LABELS[label_key][lang]
     chance = day.get("chance_of_rain")
     condition = day.get("condition_text") or ""
     hi, lo = day.get("maxtemp_c"), day.get("mintemp_c")
 
+    t = _T[lang]
     bits = []
     if condition:
         bits.append(condition)
     if hi is not None and lo is not None:
-        bits.append(f"最高 {hi:g}°C / 最低 {lo:g}°C")
+        bits.append(t["hi_lo"].format(hi=hi, lo=lo))
     if chance is not None:
-        bits.append(f"降水概率 {chance}%")
-    headline = "，".join(bits) if bits else "暂无预报数据"
+        bits.append(t["chance"].format(chance=chance))
+    no_data = t["no_data"]
+    headline = _SEP[lang].join(bits) if bits else no_data
 
-    rain = _rain_phrase(chance)
-    message = f"{headline}。{rain}".strip("。 ") + ("。" if headline != "暂无预报数据" else "")
+    rain = _rain_phrase(chance, lang)
+    end = _END[lang]
+    message = f"{headline}{_MID[lang]}{rain}".strip(end + " ")
+    if headline != no_data:
+        message += end
 
     detail = []
     if hi is not None:
-        detail.append({"label": "最高", "value": f"{hi:g}°C"})
+        detail.append({"label": t["lbl_hi"], "value": f"{hi:g}°C"})
     if lo is not None:
-        detail.append({"label": "最低", "value": f"{lo:g}°C"})
+        detail.append({"label": t["lbl_lo"], "value": f"{lo:g}°C"})
     if chance is not None:
-        detail.append({"label": "降水概率", "value": f"{chance}%"})
+        detail.append({"label": t["lbl_rain"], "value": f"{chance}%"})
     if day.get("uv") is not None:
-        detail.append({"label": "紫外线", "value": f"{day['uv']:g}"})
+        detail.append({"label": t["lbl_uv"], "value": f"{day['uv']:g}"})
 
     return Answer(
         kind="forecast",
@@ -172,43 +286,49 @@ def _format_day(location: str, day: dict[str, Any], label: str, now: datetime) -
 def answer_forecast(location: str, forecast: list[dict[str, Any]], question: str,
                     now: datetime | None = None) -> Answer:
     now = now or datetime.now(UTC)
+    lang = _lang(question)
+    t = _T[lang]
     if not forecast:
         return Answer(
             kind="forecast",
             location=location,
             title=location,
-            message="暂时没有拿到未来的预报数据，稍后再问一次试试。",
+            message=t["no_forecast_now"],
         )
 
-    target, label = _target_date(question, now)
+    target, label_key = _target_date(question, now)
     if target is not None:
         wanted = target.isoformat()
         match = next((d for d in forecast if d.get("date") == wanted), None)
         if match is None:
             horizon = forecast[-1].get("date")
+            label = _DAY_LABELS[label_key][lang]
             return Answer(
                 kind="forecast",
                 location=location,
                 title=f"{location} · {label}",
-                message=f"预报只到 {horizon}，还看不到{label}。",
+                message=t["horizon"].format(horizon=horizon, label=label),
             )
-        return _format_day(location, match, label, now)
+        return _format_day(location, match, label_key, now, lang)
 
     # No day named — a short outlook over the days we have.
     lines = []
     for day in forecast[:3]:
-        lbl = _day_label(day.get("date", ""), now)
+        key, fallback = _day_label_key(day.get("date", ""), now)
+        lbl = _label_text(key, fallback, lang)
         chance = day.get("chance_of_rain")
         cond = day.get("condition_text") or ""
-        piece = f"{lbl}：{cond}"
+        piece = t["outlook_piece"].format(lbl=lbl, cond=cond)
         if chance is not None:
-            piece += f"，降水 {chance}%"
+            piece += t["outlook_rain"].format(chance=chance)
         lines.append(piece)
+    end = _END[lang]
+    body = (_OUTLOOK_SEP[lang].join(lines) + end) if lines else (t["no_data"] + end)
     return Answer(
         kind="forecast",
         location=location,
-        title=f"{location} · 未来几天",
-        message="；".join(lines) + "。" if lines else "暂无预报数据。",
+        title=f"{location} · {t['outlook_title']}",
+        message=body,
     )
 
 
@@ -226,15 +346,22 @@ _HAZARD_KEYWORDS: dict[str, tuple[str, ...]] = {
     "air_quality": ("空气", "雾霾", "口罩", "污染", "pm2", "air", "smog", "mask"),
 }
 
-# Chinese labels for the answer title — the corpus content stays in its
+# Labels for the answer title, by language — the corpus content stays in its
 # original official English, which the citation attributes.
 _HAZARD_LABEL = {
-    "heat": "高温 · 官方防护提示",
-    "uv": "紫外线 · 官方防护提示",
-    "wind": "大风 · 官方安全提示",
-    "rain": "降雨 · 官方安全提示",
-    "air_quality": "空气质量 · 官方提示",
+    "heat": {"zh": "高温 · 官方防护提示", "en": "Heat · official guidance",
+             "ja": "高温 · 公式ガイダンス"},
+    "uv": {"zh": "紫外线 · 官方防护提示", "en": "UV · official guidance",
+           "ja": "紫外線 · 公式ガイダンス"},
+    "wind": {"zh": "大风 · 官方安全提示", "en": "Wind · official safety guidance",
+             "ja": "強風 · 公式安全ガイダンス"},
+    "rain": {"zh": "降雨 · 官方安全提示", "en": "Rain · official safety guidance",
+             "ja": "大雨 · 公式安全ガイダンス"},
+    "air_quality": {"zh": "空气质量 · 官方提示", "en": "Air quality · official guidance",
+                    "ja": "大気質 · 公式ガイダンス"},
 }
+_HAZARD_LABEL_FALLBACK = {"zh": "官方安全提示", "en": "Official safety guidance",
+                          "ja": "公式安全ガイダンス"}
 
 # English seed text per hazard. The free lexical retriever cannot match a
 # Chinese question to an English section, so the seed carries the retrieval to
@@ -343,11 +470,12 @@ def answer_guidance(location: str, question: str, weather: dict[str, Any]) -> An
     if passage is None:
         return None
 
+    lang = _lang(question)
     hazard = passage.hazard_types[0] if passage.hazard_types else hazards[0]
     return Answer(
         kind="guidance",
         location=location,
-        title=_HAZARD_LABEL.get(hazard, "官方安全提示"),
+        title=_HAZARD_LABEL.get(hazard, _HAZARD_LABEL_FALLBACK)[lang],
         message=passage.content,
         sources=[
             {
@@ -370,22 +498,22 @@ def answer(snapshot_location: dict[str, Any], location_name: str, question: str,
             location_name, snapshot_location.get("forecast") or [], question, now
         )
 
+    t = _T[_lang(question)]
     if kind == "guidance":
         guided = answer_guidance(location_name, question, snapshot_location)
         if guided is not None:
             return guided
-        # Until guidance retrieval lands, be honest about the current scope.
+        # No matching official guidance — be honest about the current scope.
         return Answer(
             kind="unknown",
             location=location_name,
             title=location_name,
-            message="这类防护建议我正在接入。现在我可以答天气预报，"
-            "比如「明天会下雨吗」「后天几度」。",
+            message=t["guidance_na"],
         )
 
     return Answer(
         kind="unknown",
         location=location_name,
         title=location_name,
-        message="我可以答天气预报，比如「明天会下雨吗」「今天几度」。",
+        message=t["unknown"],
     )
