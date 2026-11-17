@@ -48,9 +48,10 @@ SYSTEM_PROMPT = """你是一个天气看板的助手，只服务东京、大阪�
    - 非天气问题；地震、雷电等不在高温/紫外线/大风/降雨/空气质量五类里的安全话题
 4. 诚实的精度：数据是城市级、约 15 分钟前的观测，预报按天。不要打包票"一定下/不下"，
    只说概率。安全指引来自美国官方，如需说明就如实标注。
-5. 用与用户提问相同的语言回答：中文问就用中文，英文问就用英文。自然、简短，
-   直接答被问的问题，不要罗列所有字段。越界拒答（refused=true）时，也用提问的
-   语言说明答不了、以及你能答什么。
+5. 用与用户提问相同的语言回答：中文问就用中文，英文问就用英文，日文问就用日文。
+   以下方 RESPONSE_LANGUAGE 指定的语言为准。自然、简短，直接答被问的问题，不要
+   罗列所有字段。越界拒答（refused=true）时，也用提问的语言说明答不了、以及你能
+   答什么。
 
 只返回一个 JSON 对象：
 {"answer": "给用户看的中文回答", "cited_chunk_ids": ["用到的指引段落id"], "refused": false}"""
@@ -131,18 +132,24 @@ def _retrieve_guidance(question: str, entry: dict[str, Any]) -> list[Any]:
 
 
 def _answer_language(question: str) -> str:
-    """Which language the answer must be in — decided deterministically, not
-    left to the model. Any CJK character means Chinese; otherwise English. The
-    all-Chinese system prompt biases the model toward Chinese, so an English
-    question needs an explicit instruction to be answered in English."""
-    for ch in question:
-        if "一" <= ch <= "鿿" or "぀" <= ch <= "ヿ":
-            return "zh"
-    return "en"
+    """Which language the answer must be in — decided deterministically, not left
+    to the model. Japanese is checked first: kana (hiragana / katakana) is a
+    definitive Japanese signal, and Japanese writes its kanji in the same Unicode
+    block as Chinese, so a kana hit must win before the Han check. Then Chinese
+    for Han characters, else English. The all-Chinese system prompt biases the
+    model toward Chinese, so a non-Chinese question needs an explicit directive."""
+    has_han = False
+    for ch in question or "":
+        if "぀" <= ch <= "ヿ" or "ｦ" <= ch <= "ﾟ":  # hiragana, katakana, half-width kana
+            return "ja"
+        if "一" <= ch <= "鿿":  # CJK unified ideographs (Han)
+            has_han = True
+    return "zh" if has_han else "en"
 
 
 _LANGUAGE_DIRECTIVE = {
     "zh": "RESPONSE_LANGUAGE\n必须用中文回答。",
+    "ja": "RESPONSE_LANGUAGE\n必ず日本語で回答してください。",
     "en": (
         "RESPONSE_LANGUAGE\nAnswer in English only, even though the "
         "instructions above are in Chinese."

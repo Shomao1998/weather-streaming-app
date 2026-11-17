@@ -93,7 +93,10 @@ def test_no_city_named_falls_back_to_the_default_location():
     [
         ("大阪明天会下雨吗", "zh"),
         ("do I need an umbrella in osaka tomorrow", "en"),
-        ("osaka 明天下雨吗", "zh"),  # any CJK → Chinese
+        ("osaka 明天下雨吗", "zh"),  # Han, no kana → Chinese
+        ("来週札幌に出張するので傘いりますか", "ja"),  # kana present → Japanese
+        ("大阪の天気は？", "ja"),  # kanji + kana → Japanese, not Chinese
+        ("サッポロ", "ja"),  # katakana only → Japanese
     ],
 )
 def test_answer_language_is_decided_from_the_question(question, lang):
